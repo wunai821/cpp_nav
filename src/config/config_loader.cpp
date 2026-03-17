@@ -240,10 +240,61 @@ common::Status ConfigLoader::LoadFromDirectory(
         GetBool(merged_values, "lidar.enabled", result.sensors.lidar_enabled);
     result.sensors.lidar_model =
         GetString(merged_values, "lidar.model", result.sensors.lidar_model);
+    result.sensors.lidar_mount.x_m =
+        static_cast<float>(GetDouble(merged_values, "lidar.mount.x_m",
+                                     result.sensors.lidar_mount.x_m));
+    result.sensors.lidar_mount.y_m =
+        static_cast<float>(GetDouble(merged_values, "lidar.mount.y_m",
+                                     result.sensors.lidar_mount.y_m));
+    result.sensors.lidar_mount.z_m =
+        static_cast<float>(GetDouble(merged_values, "lidar.mount.z_m",
+                                     result.sensors.lidar_mount.z_m));
+    result.sensors.lidar_mount.roll_rad =
+        static_cast<float>(GetDouble(merged_values, "lidar.mount.roll_rad",
+                                     result.sensors.lidar_mount.roll_rad));
+    result.sensors.lidar_mount.pitch_rad =
+        static_cast<float>(GetDouble(merged_values, "lidar.mount.pitch_rad",
+                                     result.sensors.lidar_mount.pitch_rad));
+    result.sensors.lidar_mount.yaw_rad =
+        static_cast<float>(GetDouble(merged_values, "lidar.mount.yaw_rad",
+                                     result.sensors.lidar_mount.yaw_rad));
+    result.sensors.lidar_self_mask.enabled =
+        GetBool(merged_values, "lidar.self_mask.enabled",
+                result.sensors.lidar_self_mask.enabled);
+    result.sensors.lidar_self_mask.x_min_m =
+        static_cast<float>(GetDouble(merged_values, "lidar.self_mask.x_min_m",
+                                     result.sensors.lidar_self_mask.x_min_m));
+    result.sensors.lidar_self_mask.x_max_m =
+        static_cast<float>(GetDouble(merged_values, "lidar.self_mask.x_max_m",
+                                     result.sensors.lidar_self_mask.x_max_m));
+    result.sensors.lidar_self_mask.y_min_m =
+        static_cast<float>(GetDouble(merged_values, "lidar.self_mask.y_min_m",
+                                     result.sensors.lidar_self_mask.y_min_m));
+    result.sensors.lidar_self_mask.y_max_m =
+        static_cast<float>(GetDouble(merged_values, "lidar.self_mask.y_max_m",
+                                     result.sensors.lidar_self_mask.y_max_m));
     result.sensors.imu_enabled =
         GetBool(merged_values, "imu.enabled", result.sensors.imu_enabled);
     result.sensors.imu_model =
         GetString(merged_values, "imu.model", result.sensors.imu_model);
+    result.sensors.imu_mount.x_m =
+        static_cast<float>(GetDouble(merged_values, "imu.mount.x_m",
+                                     result.sensors.imu_mount.x_m));
+    result.sensors.imu_mount.y_m =
+        static_cast<float>(GetDouble(merged_values, "imu.mount.y_m",
+                                     result.sensors.imu_mount.y_m));
+    result.sensors.imu_mount.z_m =
+        static_cast<float>(GetDouble(merged_values, "imu.mount.z_m",
+                                     result.sensors.imu_mount.z_m));
+    result.sensors.imu_mount.roll_rad =
+        static_cast<float>(GetDouble(merged_values, "imu.mount.roll_rad",
+                                     result.sensors.imu_mount.roll_rad));
+    result.sensors.imu_mount.pitch_rad =
+        static_cast<float>(GetDouble(merged_values, "imu.mount.pitch_rad",
+                                     result.sensors.imu_mount.pitch_rad));
+    result.sensors.imu_mount.yaw_rad =
+        static_cast<float>(GetDouble(merged_values, "imu.mount.yaw_rad",
+                                     result.sensors.imu_mount.yaw_rad));
 
     result.comm.stm32_enabled =
         GetBool(merged_values, "stm32.enabled", result.comm.stm32_enabled);
@@ -448,7 +499,19 @@ std::string ConfigLoader::BuildSummary(const LoadedConfig& loaded_config) const 
           << loaded_config.frames.laser_link << ", " << loaded_config.frames.imu_link
           << "]"
           << ", sensors=[lidar:" << loaded_config.sensors.lidar_model
-          << ", imu:" << loaded_config.sensors.imu_model << "]"
+          << "@" << loaded_config.sensors.lidar_mount.x_m << ','
+          << loaded_config.sensors.lidar_mount.y_m << ','
+          << loaded_config.sensors.lidar_mount.z_m << ','
+          << loaded_config.sensors.lidar_mount.roll_rad << ','
+          << loaded_config.sensors.lidar_mount.pitch_rad << ','
+          << loaded_config.sensors.lidar_mount.yaw_rad << ", imu:"
+          << loaded_config.sensors.imu_model << "@"
+          << loaded_config.sensors.imu_mount.x_m << ','
+          << loaded_config.sensors.imu_mount.y_m << ','
+          << loaded_config.sensors.imu_mount.z_m << ','
+          << loaded_config.sensors.imu_mount.roll_rad << ','
+          << loaded_config.sensors.imu_mount.pitch_rad << ','
+          << loaded_config.sensors.imu_mount.yaw_rad << "]"
           << ", comm=[stm32:" << loaded_config.comm.stm32_port << ':'
           << loaded_config.comm.stm32_baud_rate << "]"
           << ", debug=[ws:" << (loaded_config.debug.websocket_enabled ? "on" : "off")

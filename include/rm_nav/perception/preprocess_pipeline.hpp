@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <optional>
 
+#include "rm_nav/common/types.hpp"
 #include "rm_nav/common/object_pool.hpp"
 #include "rm_nav/common/ring_queue.hpp"
 #include "rm_nav/common/status.hpp"
@@ -19,6 +20,13 @@ struct PreprocessConfig {
   float max_height_m{1.5F};
   float ground_z_max_m{-0.05F};
   float voxel_size_m{0.15F};
+  bool self_mask_enabled{false};
+  float self_mask_x_min_m{-0.3F};
+  float self_mask_x_max_m{0.3F};
+  float self_mask_y_min_m{-0.25F};
+  float self_mask_y_max_m{0.25F};
+  std::array<common::Vec2f, 4> self_mask_polygon{};
+  bool self_mask_polygon_valid{false};
   std::size_t max_filtered_frames{8};
 };
 

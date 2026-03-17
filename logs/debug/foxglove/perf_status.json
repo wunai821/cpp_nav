@@ -1,8 +1,8 @@
 {
   "driver_cpu_usage_milli": 0,
-  "sync_process_latency_ns": 7736,
-  "sync_preintegration_latency_ns": 419,
-  "sync_deskew_latency_ns": 3753,
+  "sync_process_latency_ns": 14012,
+  "sync_preintegration_latency_ns": 1015,
+  "sync_deskew_latency_ns": 5825,
   "localization_latency_ns": 0,
   "matcher_latency_ns": 0,
   "localization_light_mode": false,
@@ -10,8 +10,8 @@
   "mot_total_latency_ns": 0,
   "mot_reduced_roi_active": false,
   "planner_latency_ns": 0,
-  "safety_tick_latency_ns": 7723,
-  "foxglove_publish_latency_ns": 562341,
-  "debug_encode_latency_ns": 183475,
+  "safety_tick_latency_ns": 10448,
+  "foxglove_publish_latency_ns": 824156,
+  "debug_encode_latency_ns": 179264,
   "debug_scene_suppressed": false
 }

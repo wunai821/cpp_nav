@@ -789,19 +789,29 @@ class FoxgloveServer::Impl {
   }
 
   void CleanupClients() {
-    std::lock_guard<std::mutex> lock(clients_mutex_);
-    clients_.erase(
-        std::remove_if(clients_.begin(), clients_.end(),
-                       [](const std::shared_ptr<ClientConnection>& client) {
-                         if (client->connected.load(std::memory_order_acquire)) {
-                           return false;
-                         }
-                         if (client->reader_thread.joinable()) {
-                           client->reader_thread.join();
-                         }
-                         return true;
-                       }),
-        clients_.end());
+    std::vector<std::thread> threads_to_join;
+    {
+      std::lock_guard<std::mutex> lock(clients_mutex_);
+      clients_.erase(
+          std::remove_if(clients_.begin(), clients_.end(),
+                         [&threads_to_join](
+                             const std::shared_ptr<ClientConnection>& client) {
+                           if (client->connected.load(std::memory_order_acquire)) {
+                             return false;
+                           }
+                           if (client->reader_thread.joinable()) {
+                             threads_to_join.push_back(std::move(client->reader_thread));
+                           }
+                           return true;
+                         }),
+          clients_.end());
+    }
+
+    for (auto& thread : threads_to_join) {
+      if (thread.joinable()) {
+        thread.join();
+      }
+    }
   }
 
   FoxgloveServerOptions options_{};

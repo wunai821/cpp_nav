@@ -1,5 +1,6 @@
 #include "rm_nav/perception/preprocess_pipeline.hpp"
 
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <unordered_set>
@@ -13,6 +14,22 @@ std::uint64_t VoxelKey(int vx, int vy, int vz) {
          static_cast<std::uint64_t>(static_cast<std::uint32_t>(vz));
 }
 
+bool PointInConvexQuad(const std::array<common::Vec2f, 4>& quad, float x, float y) {
+  bool has_positive = false;
+  bool has_negative = false;
+  for (std::size_t index = 0; index < quad.size(); ++index) {
+    const auto& a = quad[index];
+    const auto& b = quad[(index + 1U) % quad.size()];
+    const float cross = (b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x);
+    has_positive = has_positive || cross > 1.0e-6F;
+    has_negative = has_negative || cross < -1.0e-6F;
+    if (has_positive && has_negative) {
+      return false;
+    }
+  }
+  return true;
+}
+
 bool PassesFilters(const PreprocessConfig& config, const data::PointXYZI& point) {
   const float range_m = std::sqrt(point.x * point.x + point.y * point.y);
   if (range_m < config.min_range_m || range_m > config.max_range_m) {
@@ -24,6 +41,17 @@ bool PassesFilters(const PreprocessConfig& config, const data::PointXYZI& point)
   if (point.z <= config.ground_z_max_m) {
     return false;
   }
+  if (config.self_mask_enabled) {
+    if (config.self_mask_polygon_valid &&
+        PointInConvexQuad(config.self_mask_polygon, point.x, point.y)) {
+      return false;
+    }
+    if (!config.self_mask_polygon_valid && point.x >= config.self_mask_x_min_m &&
+        point.x <= config.self_mask_x_max_m && point.y >= config.self_mask_y_min_m &&
+        point.y <= config.self_mask_y_max_m) {
+      return false;
+    }
+  }
   return !(point.x == 0.0F && point.y == 0.0F && point.z == 0.0F);
 }
 
@@ -31,10 +59,19 @@ bool PassesFilters(const PreprocessConfig& config, const data::PointXYZI& point)
 
 common::Status PreprocessPipeline::Configure(const PreprocessConfig& config) {
   if (config.min_range_m < 0.0F || config.max_range_m <= config.min_range_m ||
-      config.max_height_m <= config.min_height_m || config.voxel_size_m <= 0.0F) {
+      config.max_height_m <= config.min_height_m || config.voxel_size_m <= 0.0F ||
+      config.self_mask_x_max_m < config.self_mask_x_min_m ||
+      config.self_mask_y_max_m < config.self_mask_y_min_m) {
     return common::Status::InvalidArgument("invalid preprocess config");
   }
   config_ = config;
+  if (config_.self_mask_enabled && !config_.self_mask_polygon_valid) {
+    config_.self_mask_polygon = {{{config_.self_mask_x_min_m, config_.self_mask_y_min_m},
+                                  {config_.self_mask_x_max_m, config_.self_mask_y_min_m},
+                                  {config_.self_mask_x_max_m, config_.self_mask_y_max_m},
+                                  {config_.self_mask_x_min_m, config_.self_mask_y_max_m}}};
+    config_.self_mask_polygon_valid = true;
+  }
   dropped_frames_ = 0;
   configured_ = true;
   return common::Status::Ok();

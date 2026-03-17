@@ -139,6 +139,17 @@ data::Pose3f MakeMapPose(common::TimePoint stamp, float x, float y, float yaw) {
   return pose;
 }
 
+common::Vec2f TransformPoint2D(const data::Pose3f& transform, const common::Vec2f& point) {
+  const auto transformed_pose =
+      tf::Compose(transform, tf::MakeTransform(transform.child_frame, transform.child_frame,
+                                              point.x, point.y, 0.0F, 0.0F, 0.0F, 0.0F,
+                                              transform.stamp));
+  common::Vec2f transformed;
+  transformed.x = transformed_pose.position.x;
+  transformed.y = transformed_pose.position.y;
+  return transformed;
+}
+
 struct RgbaColor {
   float r{1.0F};
   float g{1.0F};
@@ -844,11 +855,12 @@ common::Status Runtime::ConfigurePipeline() {
     return status;
   }
 
-  status = preprocess_.Configure({});
-  if (!status.ok()) {
-    return status;
-  }
-
+  perception::PreprocessConfig preprocess_config;
+  preprocess_config.self_mask_enabled = loaded_config_.sensors.lidar_self_mask.enabled;
+  preprocess_config.self_mask_x_min_m = loaded_config_.sensors.lidar_self_mask.x_min_m;
+  preprocess_config.self_mask_x_max_m = loaded_config_.sensors.lidar_self_mask.x_max_m;
+  preprocess_config.self_mask_y_min_m = loaded_config_.sensors.lidar_self_mask.y_min_m;
+  preprocess_config.self_mask_y_max_m = loaded_config_.sensors.lidar_self_mask.y_max_m;
   if (mapping_mode_) {
     status = mapping_engine_.Initialize(loaded_config_.mapping);
     if (!status.ok()) {
@@ -892,12 +904,53 @@ common::Status Runtime::ConfigurePipeline() {
   }
 
   status = tf_tree_.RegisterStaticTransform(
-      tf::MakeTransform(tf::kBaseLinkFrame, tf::kLaserFrame, 0.20F, 0.00F, 0.0F));
+      tf::MakeTransform(tf::kBaseLinkFrame, tf::kLaserFrame,
+                        loaded_config_.sensors.lidar_mount.x_m,
+                        loaded_config_.sensors.lidar_mount.y_m,
+                        loaded_config_.sensors.lidar_mount.z_m,
+                        loaded_config_.sensors.lidar_mount.roll_rad,
+                        loaded_config_.sensors.lidar_mount.pitch_rad,
+                        loaded_config_.sensors.lidar_mount.yaw_rad));
   if (!status.ok()) {
     return status;
   }
   status = tf_tree_.RegisterStaticTransform(
-      tf::MakeTransform(tf::kBaseLinkFrame, tf::kImuFrame, -0.10F, 0.00F, 0.0F));
+      tf::MakeTransform(tf::kBaseLinkFrame, tf::kImuFrame,
+                        loaded_config_.sensors.imu_mount.x_m,
+                        loaded_config_.sensors.imu_mount.y_m,
+                        loaded_config_.sensors.imu_mount.z_m,
+                        loaded_config_.sensors.imu_mount.roll_rad,
+                        loaded_config_.sensors.imu_mount.pitch_rad,
+                        loaded_config_.sensors.imu_mount.yaw_rad));
+  if (!status.ok()) {
+    return status;
+  }
+
+  if (preprocess_config.self_mask_enabled) {
+    const auto base_to_laser =
+        tf_tree_.Lookup(tf::kBaseLinkFrame, tf::kLaserFrame, common::Now());
+    if (!base_to_laser.has_value()) {
+      return common::Status::InternalError("failed to lookup static base->laser transform");
+    }
+    const auto laser_to_base = tf::Inverse(*base_to_laser);
+    const std::array<common::Vec2f, 4> base_polygon = {
+        common::Vec2f{loaded_config_.sensors.lidar_self_mask.x_min_m,
+                      loaded_config_.sensors.lidar_self_mask.y_min_m},
+        common::Vec2f{loaded_config_.sensors.lidar_self_mask.x_max_m,
+                      loaded_config_.sensors.lidar_self_mask.y_min_m},
+        common::Vec2f{loaded_config_.sensors.lidar_self_mask.x_max_m,
+                      loaded_config_.sensors.lidar_self_mask.y_max_m},
+        common::Vec2f{loaded_config_.sensors.lidar_self_mask.x_min_m,
+                      loaded_config_.sensors.lidar_self_mask.y_max_m},
+    };
+    for (std::size_t index = 0; index < base_polygon.size(); ++index) {
+      preprocess_config.self_mask_polygon[index] =
+          TransformPoint2D(laser_to_base, base_polygon[index]);
+    }
+    preprocess_config.self_mask_polygon_valid = true;
+  }
+
+  status = preprocess_.Configure(preprocess_config);
   if (!status.ok()) {
     return status;
   }
