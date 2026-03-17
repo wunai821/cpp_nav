@@ -1,0 +1,4 @@
+websocket:
+  enabled: true
+  port: 0
+  publish_hz: 5

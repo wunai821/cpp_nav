@@ -1,0 +1,15 @@
+mapping:
+  enabled: true
+  loop_hz: 8
+  output_dir: /home/naiwu/rm_sentinel_nav/logs/test_runtime_mapping_mode/output
+  waypoint_path: /home/naiwu/rm_sentinel_nav/logs/test_runtime_mapping_mode/config/waypoints.txt
+  route_speed_mps: 0.7
+  route_reach_tolerance_m: 0.35
+  voxel_size_m: 0.1
+  compression_interval_frames: 5
+  z_min_m: 0.2
+  z_max_m: 1.2
+  occupancy_resolution_m: 0.1
+  occupancy_padding_m: 1.0
+  synthetic_scan_radius_m: 8.0
+  synthetic_points_per_frame: 240

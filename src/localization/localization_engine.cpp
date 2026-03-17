@@ -1,0 +1,280 @@
+#include "rm_nav/localization/localization_engine.hpp"
+
+#include <cmath>
+
+#include "rm_nav/data/tf_types.hpp"
+#include "rm_nav/tf/frame_ids.hpp"
+
+namespace rm_nav::localization {
+namespace {
+
+float NormalizeAngle(float angle) {
+  constexpr float kPi = 3.14159265358979323846F;
+  while (angle > kPi) {
+    angle -= 2.0F * kPi;
+  }
+  while (angle < -kPi) {
+    angle += 2.0F * kPi;
+  }
+  return angle;
+}
+
+data::PointXYZI TransformPoint(const data::PointXYZI& point, const data::Pose3f& pose) {
+  const float cos_yaw = std::cos(pose.rpy.z);
+  const float sin_yaw = std::sin(pose.rpy.z);
+  data::PointXYZI transformed = point;
+  transformed.x = pose.position.x + cos_yaw * point.x - sin_yaw * point.y;
+  transformed.y = pose.position.y + sin_yaw * point.x + cos_yaw * point.y;
+  transformed.z = pose.position.z + point.z;
+  return transformed;
+}
+
+}  // namespace
+
+common::Status LocalizationEngine::Initialize(
+    const std::string& config_dir, const config::LocalizationConfig& localization_config,
+    const config::SpawnConfig& spawn_config, tf::TfTreeLite* tf_tree) {
+  tf_tree_ = tf_tree;
+  config_ = localization_config;
+  initial_pose_provider_ = InitialPoseProvider(spawn_config);
+  quality_estimator_ = PoseQualityEstimator(localization_config);
+  processed_frames_ = 0;
+  dropped_frames_ = 0;
+  consecutive_failures_ = 0;
+  has_latest_odom_ = false;
+  static_map_ = {};
+
+  ScanMatchConfig matcher_config;
+  matcher_config.max_iterations = localization_config.max_iterations;
+  matcher_config.correspondence_distance_m =
+      static_cast<float>(localization_config.correspondence_distance_m);
+  matcher_config.min_match_score =
+      static_cast<float>(localization_config.min_match_score);
+
+  if (localization_config.matcher == "ndt") {
+    matcher_ = &ndt_matcher_;
+  } else {
+    matcher_ = &icp_matcher_;
+  }
+  auto status = matcher_->Configure(matcher_config);
+  if (!status.ok()) {
+    return status;
+  }
+
+  if (config_.enabled) {
+    MapLoader loader;
+    status = loader.Load(config_dir, localization_config, &static_map_);
+    if (!status.ok()) {
+      return status;
+    }
+  }
+
+  const auto now = common::Now();
+  const data::Pose3f initial_map_to_base = initial_pose_provider_.MakeInitialPose(now);
+  data::Pose3f initial_odom_to_base =
+      tf::MakeTransform(tf::kOdomFrame, tf::kBaseLinkFrame, 0.0F, 0.0F, 0.0F, now);
+  data::Pose3f initial_map_to_odom{};
+  status = map_odom_fuser_.Fuse(initial_odom_to_base, initial_map_to_base, &initial_map_to_odom);
+  if (!status.ok()) {
+    return status;
+  }
+
+  LocalizationResult initial_result;
+  initial_result.map_to_odom = initial_map_to_odom;
+  initial_result.map_to_base = initial_map_to_base;
+  initial_result.odom_to_base = initial_odom_to_base;
+  initial_result.status.map_loaded = static_map_.global_map_loaded;
+  initial_result.status.pose_trusted = false;
+  latest_result_.Publish(initial_result);
+  map_to_odom_.Publish(initial_map_to_odom);
+  odom_to_base_.Publish(initial_odom_to_base);
+  latest_aligned_scan_.Publish({});
+
+  if (tf_tree_ != nullptr) {
+    tf_tree_->PushMapToOdom(initial_map_to_odom);
+    tf_tree_->PushOdomToBase(initial_odom_to_base);
+  }
+  return common::Status::Ok();
+}
+
+common::Status LocalizationEngine::ConfigureMatcherForLoad(bool light_mode) {
+  if (matcher_ == nullptr || matcher_light_mode_active_ == light_mode) {
+    return common::Status::Ok();
+  }
+  ScanMatchConfig matcher_config;
+  matcher_config.max_iterations =
+      light_mode ? std::max(1, config_.reduced_max_iterations) : config_.max_iterations;
+  matcher_config.correspondence_distance_m =
+      static_cast<float>(config_.correspondence_distance_m);
+  matcher_config.min_match_score = static_cast<float>(config_.min_match_score);
+  auto status = matcher_->Configure(matcher_config);
+  if (!status.ok()) {
+    return status;
+  }
+  matcher_light_mode_active_ = light_mode;
+  return common::Status::Ok();
+}
+
+common::Status LocalizationEngine::EnqueueFrame(sync::SyncedFrameHandle frame) {
+  if (!input_queue_.try_push(std::move(frame))) {
+    ++dropped_frames_;
+    return common::Status::Unavailable("localization input queue is full");
+  }
+  return common::Status::Ok();
+}
+
+void LocalizationEngine::SetLatestOdom(const data::OdomState& odom) {
+  latest_odom_.Publish(odom);
+  has_latest_odom_ = true;
+}
+
+common::Status LocalizationEngine::ProcessOnce() {
+  sync::SyncedFrameHandle handle;
+  if (!input_queue_.try_pop(&handle)) {
+    return common::Status::NotReady("no synced frame for localization");
+  }
+
+  LocalizationResult result;
+  const auto status = Process(*handle.get(), &result);
+  handle.reset();
+  if (!status.ok()) {
+    return status;
+  }
+
+  latest_result_.Publish(result);
+  map_to_odom_.Publish(result.map_to_odom);
+  odom_to_base_.Publish(result.odom_to_base);
+  if (tf_tree_ != nullptr) {
+    tf_tree_->PushMapToOdom(result.map_to_odom);
+    tf_tree_->PushOdomToBase(result.odom_to_base);
+  }
+  return common::Status::Ok();
+}
+
+common::Status LocalizationEngine::Process(const data::SyncedFrame& frame,
+                                           LocalizationResult* result) {
+  if (result == nullptr) {
+    return common::Status::InvalidArgument("localization result is null");
+  }
+
+  const auto begin_ns = common::NowNs();
+  const LocalizationResult previous = latest_result_.ReadSnapshot();
+  const data::Pose3f odom_to_base =
+      has_latest_odom_ ? OdomToBaseFromState(latest_odom_.ReadSnapshot())
+                       : previous.odom_to_base;
+  const data::Pose3f predicted_map_to_base = PredictedMapToBase(frame.stamp, odom_to_base);
+
+  ScanMatchResult match;
+  common::Status match_status = common::Status::NotReady("scan matcher not configured");
+  const bool light_match_mode =
+      last_matcher_latency_ns_ >
+      static_cast<common::TimeNs>(config_.slow_match_threshold_ms) * 1000000LL;
+  result->light_match_mode = light_match_mode;
+  if (config_.enabled && static_map_.global_map_loaded && matcher_ != nullptr) {
+    auto status = ConfigureMatcherForLoad(light_match_mode);
+    if (!status.ok()) {
+      return status;
+    }
+    const auto matcher_begin_ns = common::NowNs();
+    const auto scan = light_match_mode ? DownsampleScan(frame.lidar, config_.reduced_scan_stride)
+                                       : frame.lidar;
+    match_status = matcher_->Match(static_map_, scan, predicted_map_to_base, &match);
+    result->matcher_latency_ns = common::NowNs() - matcher_begin_ns;
+    last_matcher_latency_ns_ = result->matcher_latency_ns;
+  }
+
+  if (match_status.ok() && match.converged) {
+    consecutive_failures_ = 0;
+  } else {
+    ++consecutive_failures_;
+    match = {};
+    match.matched_pose = predicted_map_to_base;
+    match.matched_pose.stamp = frame.stamp;
+    match.score = 0.0F;
+    match.iterations = 0;
+    match.converged = false;
+  }
+
+  result->odom_to_base = odom_to_base;
+  result->map_to_base = match.matched_pose;
+  result->map_to_base.reference_frame = tf::kMapFrame;
+  result->map_to_base.child_frame = tf::kBaseLinkFrame;
+  result->map_to_base.stamp = frame.stamp;
+  result->map_to_base.is_valid = true;
+
+  auto status =
+      map_odom_fuser_.Fuse(result->odom_to_base, result->map_to_base, &result->map_to_odom);
+  if (!status.ok()) {
+    return status;
+  }
+  result->map_to_odom.stamp = frame.stamp;
+
+  result->status = quality_estimator_.Evaluate(previous.map_to_base, match,
+                                               consecutive_failures_,
+                                               static_map_.global_map_loaded);
+  result->processing_latency_ns = common::NowNs() - begin_ns;
+
+  const data::LidarFrame aligned_scan = TransformScanToMap(frame.lidar, result->map_to_base);
+  latest_aligned_scan_.Publish(aligned_scan);
+  ++processed_frames_;
+  return common::Status::Ok();
+}
+
+data::LidarFrame LocalizationEngine::DownsampleScan(const data::LidarFrame& scan,
+                                                    int stride) const {
+  if (stride <= 1 || scan.points.size() <= 2U) {
+    return scan;
+  }
+  data::LidarFrame downsampled = scan;
+  downsampled.points.clear();
+  downsampled.points.reserve((scan.points.size() + static_cast<std::size_t>(stride) - 1U) /
+                             static_cast<std::size_t>(stride));
+  for (std::size_t index = 0; index < scan.points.size(); index += static_cast<std::size_t>(stride)) {
+    downsampled.points.push_back(scan.points[index]);
+  }
+  return downsampled;
+}
+
+data::Pose3f LocalizationEngine::OdomToBaseFromState(const data::OdomState& odom) const {
+  data::Pose3f pose;
+  pose.stamp = odom.stamp;
+  pose.reference_frame = tf::kOdomFrame;
+  pose.child_frame = tf::kBaseLinkFrame;
+  pose.position.x = odom.x_m;
+  pose.position.y = odom.y_m;
+  pose.rpy.z = odom.yaw_rad;
+  pose.is_valid = true;
+  return pose;
+}
+
+data::Pose3f LocalizationEngine::PredictedMapToBase(common::TimePoint stamp,
+                                                    const data::Pose3f& odom_to_base) const {
+  const LocalizationResult previous = latest_result_.ReadSnapshot();
+  if (processed_frames_ == 0U) {
+    return initial_pose_provider_.MakeInitialPose(stamp);
+  }
+  if (previous.map_to_odom.is_valid && odom_to_base.is_valid) {
+    data::Pose3f predicted = tf::Compose(previous.map_to_odom, odom_to_base);
+    predicted.stamp = stamp;
+    predicted.reference_frame = tf::kMapFrame;
+    predicted.child_frame = tf::kBaseLinkFrame;
+    predicted.rpy.z = NormalizeAngle(predicted.rpy.z);
+    predicted.is_valid = true;
+    return predicted;
+  }
+  return initial_pose_provider_.MakeInitialPose(stamp);
+}
+
+data::LidarFrame LocalizationEngine::TransformScanToMap(const data::LidarFrame& scan,
+                                                        const data::Pose3f& map_to_base) const {
+  data::LidarFrame transformed = scan;
+  transformed.frame_id = tf::kMapFrame;
+  transformed.points.clear();
+  transformed.points.reserve(scan.points.size());
+  for (const auto& point : scan.points) {
+    transformed.points.push_back(TransformPoint(point, map_to_base));
+  }
+  return transformed;
+}
+
+}  // namespace rm_nav::localization

@@ -1,0 +1,11 @@
+scenario=mixed
+scenario_file=config/mock_scenario.yaml
+duration_s=2
+hz=20
+integrate_pose=true
+produced=40
+consumed=40
+planned=40
+producer_dropped=0
+queue_dropped=0
+last_cmd=-1,0.8,0, brake=false

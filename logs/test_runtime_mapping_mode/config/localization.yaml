@@ -1,0 +1,12 @@
+localization:
+  enabled: false
+  occupancy_path: occupancy.bin
+  global_map_pcd_path: /home/naiwu/rm_sentinel_nav/maps/combat/active/global_map.pcd
+  map_meta_path: map_meta.json
+  matcher: icp
+  max_iterations: 12
+  correspondence_distance_m: 0.8
+  min_match_score: 0.25
+  max_position_jump_m: 1.0
+  max_yaw_jump_rad: 0.6
+  map_downsample_step: 1

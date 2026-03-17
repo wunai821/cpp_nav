@@ -1,0 +1,18 @@
+{
+  "mode": "approach_center",
+  "distance_to_goal_m": 4.42338,
+  "distance_to_center_m": 4.42338,
+  "yaw_error_rad": -0.195151,
+  "reached": false,
+  "cmd": {"vx": -1, "vy": 0.8, "wz": 0},
+  "dwa_score": {
+    "goal": 0,
+    "path": 0.511548,
+    "smooth": 2,
+    "heading": 5.61591,
+    "clearance": 5,
+    "velocity": 0.256125,
+    "dynamic": -17.4189,
+    "total": -4.03534
+  }
+}

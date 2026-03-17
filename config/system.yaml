@@ -1,0 +1,14 @@
+# 系统级运行配置：定义程序名、版本、日志级别、自动退出时长以及各工作线程的 CPU 绑定策略。
+app_name: rm_nav_main  # 程序可执行名，用于日志、诊断和启动识别。
+version: 0.1.0  # 当前系统版本号，用于和构建产物及配置集对应。
+log_level: INFO  # 日志输出级别，可选例如 DEBUG/INFO/WARN/ERROR。
+auto_shutdown_ms: 500  # 自动退出时间，单位毫秒；调试空转链路时可用于定时收尾。
+manual_mode_selector: -1  # 手动模式选择枚举；-1 表示自动 FSM，0 表示只走 MODE_WARMUP+MODE_SAVE，1 表示只走 MODE_COMBAT/GOTO_CENTER/HOLD_CENTER/RECENTER/RECOVERY。
+threads:  # 线程绑定配置，-1 表示不固定到特定 CPU 核心。
+  driver_cpu: -1  # 驱动线程绑定核心，负责雷达、IMU、STM32 等底层 IO。
+  sync_cpu: -1  # 同步线程绑定核心，负责传感器时间对齐与同步帧生成。
+  pose_core_cpu: -1  # 位姿核心线程绑定核心，负责定位与 TF 主链更新。
+  perception_cpu: -1  # 感知线程绑定核心，负责预处理、局部代价图和动态障碍。
+  planner_cpu: -1  # 规划线程绑定核心，负责全局路径和局部控制输出。
+  safety_fsm_cpu: -1  # 安全/FSM 线程绑定核心，负责指令约束和安全态切换。
+  debug_cpu: -1  # 调试线程绑定核心，负责统计输出和调试旁路发布。

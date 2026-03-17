@@ -1,0 +1,3 @@
+safety:
+  loop_hz: 20
+  emergency_stop_distance_m: 0.4

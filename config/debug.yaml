@@ -1,0 +1,9 @@
+# 调试旁路配置：定义调试数据是否输出以及 WebSocket 调试发布参数。
+websocket:  # 调试发布通道配置，用于可视化和外部调试工具接入。
+  enabled: false  # 是否启用调试数据的 WebSocket/旁路输出。
+  port: 8765  # 调试服务监听端口。
+  publish_hz: 10  # 调试数据发布频率，单位 Hz。
+  pointcloud_publish_hz: 5  # 点云/SceneUpdate 类大消息的发布频率上限，单位 Hz。
+  scalar_publish_hz: 20  # pose/cmd/perf 等轻量标量消息的发布频率上限，单位 Hz。
+  high_load_debug_threshold_ms: 8  # 单次 debug 发布耗时超过该阈值时视为高负载，单位毫秒。
+  drop_pointcloud_on_high_load: true  # 高负载时是否自动关闭大点云/SceneUpdate 调试通道，优先保主链。

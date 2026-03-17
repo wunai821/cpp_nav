@@ -1,0 +1,12 @@
+{
+  "state": "MODE_SAVE",
+  "previous_state": "MODE_WARMUP",
+  "last_event_code": "NONE",
+  "last_event_summary": "save requested",
+  "mapping_active": false,
+  "waypoint_active": false,
+  "localization_active": false,
+  "center_hold_active": false,
+  "recovery_active": false,
+  "failsafe_active": false
+}

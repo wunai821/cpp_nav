@@ -1,0 +1,8 @@
+frame_index=0
+points=240
+imu_packets=21
+scan_duration_ms=100.000000
+deskewed=true
+delta_rpy_xyz=0.000000,0.000000,0.750000
+delta_velocity_xyz=0.000000,0.000000,0.000000
+delta_position_xyz=0.000000,0.000000,0.000000

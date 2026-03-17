@@ -1,0 +1,27 @@
+# 规划器配置：定义目标区域、中心占点参数以及全局/局部规划的基础采样设置。
+planner:  # 规划主配置，用于全局 A*、Omni-DWA 和 Center Hold 行为。
+  loop_hz: 20  # 规划线程运行频率，单位 Hz。
+  supply_start_x_m: 1.2  # 补给区起点的全局 X 坐标，单位米。
+  supply_start_y_m: 2.0  # 补给区起点的全局 Y 坐标，单位米。
+  center_goal_x_m: 6.0  # 中心区目标点的全局 X 坐标，单位米。
+  center_goal_y_m: 3.0  # 中心区目标点的全局 Y 坐标，单位米。
+  center_radius_m: 0.6  # 判定进入中心区的半径阈值，单位米。
+  yaw_align_tolerance_rad: 0.12  # 到点后朝向对齐允许误差，单位弧度。
+  recenter_threshold_m: 0.9  # 偏离中心点超过该距离后重新触发回中逻辑，单位米。
+  max_vx_mps: 1.0  # 底盘前向最大速度，单位米每秒。
+  max_vy_mps: 0.8  # 底盘侧向最大速度，单位米每秒。
+  max_wz_radps: 1.0  # 底盘最大角速度，单位弧度每秒。
+  hold_max_v_mps: 0.25  # 中心保持阶段的线速度限幅，单位米每秒。
+  hold_max_wz_radps: 0.35  # 中心保持阶段的角速度限幅，单位弧度每秒。
+  dwa_linear_samples: 5  # DWA 前向速度采样数量。
+  dwa_lateral_samples: 5  # DWA 侧向速度采样数量。
+  dwa_yaw_samples: 5  # DWA 角速度采样数量。
+  dwa_horizon_s: 1.0  # DWA 轨迹前向预测时域，单位秒。
+  dwa_dt_s: 0.2  # DWA 轨迹离散积分步长，单位秒。
+  weight_heading: 2.0  # DWA 趋向目标的权重，越大越优先朝目标方向收敛。
+  weight_clearance: 5.0  # DWA 避障安全距离权重，越大越倾向远离障碍物。
+  weight_velocity: 0.2  # DWA 速度收益权重，越大越鼓励选择更高速度。
+  weight_dynamic: 8.0  # DWA 动态障碍避让权重，越大越保守地规避运动目标。
+  dynamic_inflation_m: 0.2  # 动态障碍额外膨胀半径，单位米，用于给运动目标留出安全余量。
+  dynamic_influence_distance_m: 1.6  # 动态障碍开始显著影响 DWA 打分的最小净空距离，单位米。
+  dynamic_emergency_distance_m: 0.2  # 动态障碍进入紧急避让区的净空阈值，单位米，越小越激进。

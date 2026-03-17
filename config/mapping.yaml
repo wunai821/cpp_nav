@@ -1,0 +1,17 @@
+# 热身建图配置：控制最小建图链、固定巡航路径、3D 点云累积和 2D 地图导出参数。
+# 这一阶段只做热身建图闭环，不启用复杂回环、稠密彩色地图和自动 frontier 探索。
+mapping:
+  enabled: false  # 是否启用 runtime 热身建图模式；独立 warmup_mapping_tool 不受该开关限制。
+  loop_hz: 10  # 建图主循环频率，单位 Hz。
+  output_dir: ../maps/warmup/active  # 建图导出目录，输出 global_map.pcd / occupancy.bin / occupancy.png / map_meta.json。
+  waypoint_path: warmup_waypoints.txt  # 固定巡航路径文件，相对当前 config 目录解析。
+  route_speed_mps: 0.7  # 固定巡航时的目标移动速度，单位米每秒。
+  route_reach_tolerance_m: 0.35  # 距离当前 waypoint 小于该值后切到下一个 waypoint，单位米。
+  voxel_size_m: 0.10  # 3D 地图体素累积大小，单位米。
+  compression_interval_frames: 5  # 体素地图的定期压缩帧间隔，第一版主要作为节流参数保留。
+  z_min_m: 0.2  # 2D 投影保留的最小高度，低于该值的点视为地面或低矮干扰。
+  z_max_m: 1.2  # 2D 投影保留的最大高度，高于该值的点不参与占据栅格生成。
+  occupancy_resolution_m: 0.1  # 占据栅格分辨率，单位米每格。
+  occupancy_padding_m: 1.0  # 投影到 2D 地图时在边界外额外留出的 padding，单位米。
+  synthetic_scan_radius_m: 8.0  # 热身建图工具生成假扫描时的最大观测半径，单位米。
+  synthetic_points_per_frame: 480  # 热身建图工具每帧采样的点数上限。

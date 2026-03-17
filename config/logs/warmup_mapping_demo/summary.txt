@@ -1,0 +1,6 @@
+config_dir=config
+duration_s=2
+loop_hz=8
+frames=16
+global_points=193
+output_dir=config/logs/warmup_mapping_demo

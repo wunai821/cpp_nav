@@ -1,0 +1,6 @@
+lidar:
+  enabled: true
+  model: synthetic
+imu:
+  enabled: false
+  model: disabled
