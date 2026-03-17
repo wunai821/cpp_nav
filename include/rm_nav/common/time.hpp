@@ -31,6 +31,7 @@ void SleepUntil(TimePoint time_point);
 class TimeConverter {
  public:
   void Calibrate(TimeNs driver_time_ns, TimePoint system_time);
+  void Reset();
   bool is_calibrated() const;
   TimePoint DriverToSystem(TimeNs driver_time_ns) const;
   TimeNs SystemToDriver(TimePoint system_time) const;

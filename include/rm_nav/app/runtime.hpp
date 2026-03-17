@@ -12,6 +12,7 @@
 #include "rm_nav/config/config_loader.hpp"
 #include "rm_nav/debug/foxglove_server.hpp"
 #include "rm_nav/data/chassis_cmd.hpp"
+#include "rm_nav/data/lidar_frame.hpp"
 #include "rm_nav/data/odom_state.hpp"
 #include "rm_nav/data/referee_state.hpp"
 #include "rm_nav/data/safety_event.hpp"
@@ -63,6 +64,7 @@ class Runtime {
   void DebugThreadMain();
   common::Status SaveMappingArtifacts(
       localization::StaticMap* exported_map = nullptr);
+  bool PerceptionBringupMode() const;
   common::Status InitializeCombatPipeline(
       const config::LocalizationConfig& localization_config,
       const config::SpawnConfig& spawn_config);
@@ -107,6 +109,7 @@ class Runtime {
   common::DoubleBuffer<data::ChassisCmd> safety_cmd_{};
   common::DoubleBuffer<data::ChassisCmd> mapping_cmd_{};
   common::DoubleBuffer<data::Pose3f> mapping_pose_{};
+  common::DoubleBuffer<data::LidarFrame> latest_filtered_scan_{};
   common::DoubleBuffer<data::OdomState> stm32_odom_{};
   common::DoubleBuffer<data::RefereeState> referee_state_{};
   common::DoubleBuffer<data::SafetyEvent> latest_safety_event_{};

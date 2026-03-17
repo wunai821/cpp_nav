@@ -630,7 +630,15 @@ class FoxgloveServer::Impl {
 
       auto client = std::make_shared<ClientConnection>();
       client->fd = client_fd;
-      if (!Handshake(client_fd)) {
+      utils::LogInfo("foxglove",
+                     "client accepted from " + std::string(inet_ntoa(address.sin_addr)) + ":" +
+                         std::to_string(ntohs(address.sin_port)));
+      std::string handshake_error;
+      if (!Handshake(client_fd, &handshake_error)) {
+        utils::LogWarn("foxglove",
+                       "client handshake failed: " +
+                           (handshake_error.empty() ? std::string("unknown reason")
+                                                    : handshake_error));
         close(client_fd);
         continue;
       }
@@ -651,17 +659,23 @@ class FoxgloveServer::Impl {
     }
   }
 
-  bool Handshake(int client_fd) const {
+  bool Handshake(int client_fd, std::string* error) const {
     std::string request;
     request.reserve(1024U);
     std::array<char, 1024> buffer{};
     while (request.find("\r\n\r\n") == std::string::npos) {
       const ssize_t rc = recv(client_fd, buffer.data(), buffer.size(), 0);
       if (rc <= 0) {
+        if (error != nullptr) {
+          *error = "failed to read websocket handshake";
+        }
         return false;
       }
       request.append(buffer.data(), static_cast<std::size_t>(rc));
       if (request.size() > 16384U) {
+        if (error != nullptr) {
+          *error = "websocket handshake request too large";
+        }
         return false;
       }
     }
@@ -670,6 +684,9 @@ class FoxgloveServer::Impl {
     std::string request_line;
     std::getline(stream, request_line);
     if (request_line.find("GET ") != 0) {
+      if (error != nullptr) {
+        *error = "websocket handshake is not an HTTP GET";
+      }
       return false;
     }
 
@@ -693,15 +710,18 @@ class FoxgloveServer::Impl {
 
     const auto key_it = headers.find("sec-websocket-key");
     if (key_it == headers.end()) {
+      if (error != nullptr) {
+        *error = "missing Sec-WebSocket-Key";
+      }
       return false;
     }
     const auto protocol_it = headers.find("sec-websocket-protocol");
-    std::string protocol = kFoxgloveProtocolV1;
+    std::string protocol = kFoxgloveProtocolLegacy;
     if (protocol_it != headers.end()) {
-      if (ContainsProtocol(protocol_it->second, kFoxgloveProtocolV1)) {
-        protocol = kFoxgloveProtocolV1;
-      } else if (ContainsProtocol(protocol_it->second, kFoxgloveProtocolLegacy)) {
+      if (ContainsProtocol(protocol_it->second, kFoxgloveProtocolLegacy)) {
         protocol = kFoxgloveProtocolLegacy;
+      } else if (ContainsProtocol(protocol_it->second, kFoxgloveProtocolV1)) {
+        protocol = kFoxgloveProtocolV1;
       }
     }
 
@@ -712,8 +732,14 @@ class FoxgloveServer::Impl {
         "Sec-WebSocket-Accept: " +
         WebsocketAccept(key_it->second) + "\r\n" +
         "Sec-WebSocket-Protocol: " + protocol + "\r\n\r\n";
-    return SendAll(client_fd, reinterpret_cast<const std::uint8_t*>(response.data()),
-                   response.size());
+    if (!SendAll(client_fd, reinterpret_cast<const std::uint8_t*>(response.data()),
+                 response.size())) {
+      if (error != nullptr) {
+        *error = "failed to send websocket handshake response";
+      }
+      return false;
+    }
+    return true;
   }
 
   void ReadLoop(const std::shared_ptr<ClientConnection>& client) {

@@ -1,6 +1,6 @@
 # 定位配置：定义静态地图输入、匹配器选择以及定位质量判定阈值。
 localization:  # 定位主配置，用于地图加载、scan matcher 和 map->odom 修正。
-  enabled: true  # 是否启用定位模块。
+  enabled: false  # 是否启用定位模块。
   occupancy_path: ../maps/combat/active/occupancy.bin  # 占据栅格地图文件路径。
   global_map_pcd_path: ../maps/combat/active/global_map.pcd  # 全局点云地图文件路径。
   map_meta_path: ../maps/combat/active/map_meta.json  # 地图元信息文件路径，包含分辨率和原点等描述。

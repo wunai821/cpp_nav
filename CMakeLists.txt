@@ -5,6 +5,29 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+set(UNITREE_LIDAR_SDK_ROOT "/home/naiwu/unitree_lidar_sdk" CACHE PATH
+    "Path to the Unitree lidar SDK root directory")
+if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64" OR CMAKE_SYSTEM_PROCESSOR STREQUAL "amd64")
+  set(UNITREE_LIDAR_SDK_ARCH "x86_64")
+elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
+  set(UNITREE_LIDAR_SDK_ARCH "aarch64")
+else()
+  set(UNITREE_LIDAR_SDK_ARCH "")
+endif()
+
+set(UNITREE_LIDAR_SDK_HEADER "${UNITREE_LIDAR_SDK_ROOT}/include/unitree_lidar_sdk.h")
+set(UNITREE_LIDAR_SDK_LIBRARY
+    "${UNITREE_LIDAR_SDK_ROOT}/lib/${UNITREE_LIDAR_SDK_ARCH}/libunitree_lidar_sdk.a")
+set(RM_NAV_HAS_UNITREE_LIDAR_SDK FALSE)
+if(UNITREE_LIDAR_SDK_ARCH AND EXISTS "${UNITREE_LIDAR_SDK_HEADER}" AND EXISTS "${UNITREE_LIDAR_SDK_LIBRARY}")
+  add_library(unitree_lidar_sdk STATIC IMPORTED)
+  set_target_properties(unitree_lidar_sdk PROPERTIES
+    IMPORTED_LOCATION "${UNITREE_LIDAR_SDK_LIBRARY}"
+    INTERFACE_INCLUDE_DIRECTORIES "${UNITREE_LIDAR_SDK_ROOT}/include"
+  )
+  set(RM_NAV_HAS_UNITREE_LIDAR_SDK TRUE)
+endif()
+
 add_library(rm_nav_core
   src/app/app.cpp
   src/app/bootstrap.cpp
@@ -64,6 +87,10 @@ target_compile_definitions(rm_nav_core
   PUBLIC
     RM_NAV_VERSION="${PROJECT_VERSION}"
 )
+if(RM_NAV_HAS_UNITREE_LIDAR_SDK)
+  target_link_libraries(rm_nav_core PRIVATE unitree_lidar_sdk)
+  target_compile_definitions(rm_nav_core PUBLIC RM_NAV_HAS_UNITREE_LIDAR_SDK=1)
+endif()
 
 add_executable(rm_nav_main
   src/app/main.cpp

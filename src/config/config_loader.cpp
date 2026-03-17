@@ -201,6 +201,8 @@ common::Status ConfigLoader::LoadFromDirectory(
     result.system.version = GetString(merged_values, "version", result.system.version);
     result.system.log_level =
         GetString(merged_values, "log_level", result.system.log_level);
+    result.system.bringup_mode =
+        GetString(merged_values, "bringup_mode", result.system.bringup_mode);
     result.system.auto_shutdown_ms =
         GetInt(merged_values, "auto_shutdown_ms", result.system.auto_shutdown_ms);
     result.system.manual_mode_selector =
@@ -238,8 +240,16 @@ common::Status ConfigLoader::LoadFromDirectory(
 
     result.sensors.lidar_enabled =
         GetBool(merged_values, "lidar.enabled", result.sensors.lidar_enabled);
+    result.sensors.lidar_source =
+        GetString(merged_values, "lidar.source", result.sensors.lidar_source);
     result.sensors.lidar_model =
         GetString(merged_values, "lidar.model", result.sensors.lidar_model);
+    result.sensors.lidar_port =
+        GetString(merged_values, "lidar.port", result.sensors.lidar_port);
+    result.sensors.lidar_baud_rate =
+        GetInt(merged_values, "lidar.baud_rate", result.sensors.lidar_baud_rate);
+    result.sensors.lidar_cloud_scan_num =
+        GetInt(merged_values, "lidar.cloud_scan_num", result.sensors.lidar_cloud_scan_num);
     result.sensors.lidar_mount.x_m =
         static_cast<float>(GetDouble(merged_values, "lidar.mount.x_m",
                                      result.sensors.lidar_mount.x_m));
@@ -275,6 +285,8 @@ common::Status ConfigLoader::LoadFromDirectory(
                                      result.sensors.lidar_self_mask.y_max_m));
     result.sensors.imu_enabled =
         GetBool(merged_values, "imu.enabled", result.sensors.imu_enabled);
+    result.sensors.imu_source =
+        GetString(merged_values, "imu.source", result.sensors.imu_source);
     result.sensors.imu_model =
         GetString(merged_values, "imu.model", result.sensors.imu_model);
     result.sensors.imu_mount.x_m =
@@ -305,6 +317,8 @@ common::Status ConfigLoader::LoadFromDirectory(
 
     result.debug.websocket_enabled =
         GetBool(merged_values, "websocket.enabled", result.debug.websocket_enabled);
+    result.debug.websocket_host =
+        GetString(merged_values, "websocket.host", result.debug.websocket_host);
     result.debug.websocket_port =
         GetInt(merged_values, "websocket.port", result.debug.websocket_port);
     result.debug.publish_hz =
@@ -479,6 +493,16 @@ common::Status ConfigLoader::LoadFromDirectory(
     result.spawn.y_m = GetDouble(merged_values, "spawn.y_m", result.spawn.y_m);
     result.spawn.theta_rad =
         GetDouble(merged_values, "spawn.theta_rad", result.spawn.theta_rad);
+
+    if (result.system.bringup_mode == "lidar_view") {
+      result.system.manual_mode_selector = -1;
+      result.localization.enabled = false;
+      result.mapping.enabled = false;
+      result.debug.websocket_enabled = true;
+      if (result.system.auto_shutdown_ms <= 1000) {
+        result.system.auto_shutdown_ms = 15000;
+      }
+    }
   } catch (const std::exception&) {
     return common::Status::InvalidArgument("invalid scalar value in config");
   }
@@ -492,6 +516,7 @@ std::string ConfigLoader::BuildSummary(const LoadedConfig& loaded_config) const 
   summary << "config_dir=" << loaded_config.config_dir
           << ", files=" << loaded_config.loaded_files.size()
           << ", log_level=" << loaded_config.system.log_level
+          << ", bringup_mode=" << loaded_config.system.bringup_mode
           << ", auto_shutdown_ms=" << loaded_config.system.auto_shutdown_ms
           << ", manual_mode_selector=" << loaded_config.system.manual_mode_selector
           << ", frames=[" << loaded_config.frames.map << ", " << loaded_config.frames.odom
@@ -499,13 +524,15 @@ std::string ConfigLoader::BuildSummary(const LoadedConfig& loaded_config) const 
           << loaded_config.frames.laser_link << ", " << loaded_config.frames.imu_link
           << "]"
           << ", sensors=[lidar:" << loaded_config.sensors.lidar_model
+          << "/" << loaded_config.sensors.lidar_source
+          << ":" << loaded_config.sensors.lidar_port
           << "@" << loaded_config.sensors.lidar_mount.x_m << ','
           << loaded_config.sensors.lidar_mount.y_m << ','
           << loaded_config.sensors.lidar_mount.z_m << ','
           << loaded_config.sensors.lidar_mount.roll_rad << ','
           << loaded_config.sensors.lidar_mount.pitch_rad << ','
           << loaded_config.sensors.lidar_mount.yaw_rad << ", imu:"
-          << loaded_config.sensors.imu_model << "@"
+          << loaded_config.sensors.imu_model << "/" << loaded_config.sensors.imu_source << "@"
           << loaded_config.sensors.imu_mount.x_m << ','
           << loaded_config.sensors.imu_mount.y_m << ','
           << loaded_config.sensors.imu_mount.z_m << ','
@@ -515,7 +542,8 @@ std::string ConfigLoader::BuildSummary(const LoadedConfig& loaded_config) const 
           << ", comm=[stm32:" << loaded_config.comm.stm32_port << ':'
           << loaded_config.comm.stm32_baud_rate << "]"
           << ", debug=[ws:" << (loaded_config.debug.websocket_enabled ? "on" : "off")
-          << ':' << loaded_config.debug.websocket_port
+          << ':' << loaded_config.debug.websocket_host << ':'
+          << loaded_config.debug.websocket_port
           << ", scene_hz=" << loaded_config.debug.pointcloud_publish_hz
           << ", scalar_hz=" << loaded_config.debug.scalar_publish_hz << "]"
           << ", localization=[enabled="

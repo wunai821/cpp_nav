@@ -18,6 +18,7 @@ struct SystemConfig {
   std::string app_name{"rm_nav_main"};
   std::string version{"0.1.0"};
   std::string log_level{"INFO"};
+  std::string bringup_mode{"none"};
   int auto_shutdown_ms{1000};
   int manual_mode_selector{-1};
   ThreadAffinityConfig thread_affinity{};

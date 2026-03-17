@@ -51,6 +51,11 @@ void TimeConverter::Calibrate(TimeNs driver_time_ns, TimePoint system_time) {
   calibrated_.store(true, std::memory_order_release);
 }
 
+void TimeConverter::Reset() {
+  offset_ns_.store(0, std::memory_order_release);
+  calibrated_.store(false, std::memory_order_release);
+}
+
 bool TimeConverter::is_calibrated() const {
   return calibrated_.load(std::memory_order_acquire);
 }

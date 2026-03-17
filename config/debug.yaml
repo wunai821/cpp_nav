@@ -1,6 +1,7 @@
 # 调试旁路配置：定义调试数据是否输出以及 WebSocket 调试发布参数。
 websocket:  # 调试发布通道配置，用于可视化和外部调试工具接入。
-  enabled: false  # 是否启用调试数据的 WebSocket/旁路输出。
+  enabled: true  # 是否启用调试数据的 WebSocket/旁路输出。
+  host: 127.0.0.0 # WebSocket 监听地址；127.0.0.1 仅允许本机连接，0.0.0.0 表示允许局域网内其他设备连接。
   port: 8765  # 调试服务监听端口。
   publish_hz: 10  # 调试数据发布频率，单位 Hz。
   pointcloud_publish_hz: 5  # 点云/SceneUpdate 类大消息的发布频率上限，单位 Hz。

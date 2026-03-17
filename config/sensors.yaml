@@ -1,7 +1,11 @@
 # 传感器启用配置：定义当前系统接入的核心传感器及其型号标识。
 lidar:  # 激光雷达配置，用于驱动初始化和录制回放选择。
   enabled: true  # 是否启用雷达驱动与相关数据链路。
+  source: unitree_sdk  # 雷达数据源类型，可选 synthetic 或 unitree_sdk。
   model: L1  # 雷达型号标识，用于选择对应驱动和解码器实现。
+  port: /dev/serial/by-id/usb-1a86_USB_Single_Serial_588B005231-if00 # 真机模式下雷达串口设备路径，建议比赛现场改成 /dev/serial/by-id/...。
+  baud_rate: 2000000  # 真机模式下传给 Unitree SDK 的串口波特率参数。
+  cloud_scan_num: 18  # Unitree SDK 聚合多少个 scan 组成一帧点云，值越大帧率越低但单帧更密。
   mount:  # 雷达相对 base_link 的静态外参，现场调安装位时优先改这里。
     x_m: 0.20  # 雷达中心在 base_link 下的前后偏移，前方为正，单位米。
     y_m: 0.00  # 雷达中心在 base_link 下的左右偏移，左侧为正，单位米。
@@ -17,11 +21,12 @@ lidar:  # 激光雷达配置，用于驱动初始化和录制回放选择。
     y_max_m: 0.25  # 矩形 footprint 在 base_link 下的最大左右边界，单位米。
 imu:  # IMU 配置，用于姿态预积分、deskew 和同步链路。
   enabled: true  # 是否启用 IMU 驱动与相关同步逻辑。
-  model: RM_IMU  # IMU 型号标识，用于选择对应驱动和坐标解释方式。
-  mount:  # IMU 相对 base_link 的静态外参，现场校准时统一在这里调整。
-    x_m: -0.10  # IMU 中心在 base_link 下的前后偏移，前方为正，单位米。
-    y_m: 0.00  # IMU 中心在 base_link 下的左右偏移，左侧为正，单位米。
-    z_m: 0.00  # IMU 中心在 base_link 下的高度偏移，向上为正，单位米。
-    roll_rad: 0.00  # IMU 绕 x 轴的安装滚转角，右手系为正，单位弧度。
-    pitch_rad: 0.00  # IMU 绕 y 轴的安装俯仰角，右手系为正，单位弧度。
-    yaw_rad: 0.00  # IMU 朝向相对 base_link 的偏航角，逆时针为正，单位弧度。
+  source: lidar_internal  # IMU 数据源；synthetic 表示独立假 IMU，lidar_internal 表示复用 Unitree L1 雷达内置 IMU。
+  model: L1_INTERNAL  # IMU 型号标识；这里表示使用雷达内部 IMU，而不是外接 RM_IMU。
+  mount:  # IMU 相对 base_link 的静态外参；当前先按“内置 IMU 与雷达中心近似同位同姿”处理，后续若拿到官方芯片偏移可再细调。
+    x_m: 0.20  # IMU 中心在 base_link 下的前后偏移，先与 lidar.mount 对齐，前方为正，单位米。
+    y_m: 0.00  # IMU 中心在 base_link 下的左右偏移，先与 lidar.mount 对齐，左侧为正，单位米。
+    z_m: 0.00  # IMU 中心在 base_link 下的高度偏移，先与 lidar.mount 对齐，向上为正，单位米。
+    roll_rad: 0.00  # IMU 绕 x 轴的安装滚转角，先与 lidar.mount 对齐，右手系为正，单位弧度。
+    pitch_rad: 0.00  # IMU 绕 y 轴的安装俯仰角，先与 lidar.mount 对齐，右手系为正，单位弧度。
+    yaw_rad: 0.00  # IMU 朝向相对 base_link 的偏航角，先与 lidar.mount 对齐，逆时针为正，单位弧度。

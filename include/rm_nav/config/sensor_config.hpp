@@ -23,10 +23,15 @@ struct ExtrinsicConfig {
 
 struct SensorConfig {
   bool lidar_enabled{true};
+  std::string lidar_source{"synthetic"};
   std::string lidar_model{"L1"};
+  std::string lidar_port{"/dev/ttyACM0"};
+  int lidar_baud_rate{2000000};
+  int lidar_cloud_scan_num{18};
   ExtrinsicConfig lidar_mount{0.20F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F};
   RectMaskConfig lidar_self_mask{};
   bool imu_enabled{true};
+  std::string imu_source{"synthetic"};
   std::string imu_model{"GenericIMU"};
   ExtrinsicConfig imu_mount{-0.10F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F};
 };

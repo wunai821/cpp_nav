@@ -1,0 +1,12 @@
+scenario=mixed
+scenario_file=config/mock_scenario.yaml
+duration_s=20
+hz=2
+integrate_pose=true
+produced=40
+consumed=40
+planned=40
+producer_dropped=0
+queue_dropped=0
+last_cmd=0,0,0, brake=true
+foxglove_ws=ws://127.0.0.1:8765

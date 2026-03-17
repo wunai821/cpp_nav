@@ -166,6 +166,11 @@ constexpr std::uint32_t kRuntimePerfStatusChannelId = 206U;
 constexpr std::uint32_t kRuntimeSafetyEventChannelId = 207U;
 constexpr std::uint32_t kRuntimePoseChannelId = 208U;
 constexpr std::uint32_t kRuntimeCmdChannelId = 209U;
+constexpr std::uint32_t kRuntimeLocalCostmapSceneChannelId = 210U;
+constexpr std::uint32_t kRuntimeFootprintSceneChannelId = 211U;
+constexpr std::uint32_t kRuntimeLaserLinkSceneChannelId = 212U;
+constexpr std::uint32_t kRuntimeBaseLinkSceneChannelId = 213U;
+constexpr std::uint32_t kRuntimeCurrentScanSceneChannelId = 214U;
 
 constexpr char kRuntimeMappingStatusSchema[] =
     R"({"type":"object","properties":{"processed_frames":{"type":"integer"},"accumulated_points":{"type":"integer"},"processing_latency_ns":{"type":"integer"},"current_waypoint_index":{"type":"integer"},"waypoint_count":{"type":"integer"}},"required":["processed_frames","accumulated_points","processing_latency_ns","current_waypoint_index","waypoint_count"]})";
@@ -204,6 +209,16 @@ std::vector<debug::FoxgloveChannel> BuildRuntimeMappingFoxgloveChannels() {
        "jsonschema", kRuntimePoseSchema},
       {kRuntimeCmdChannelId, "/rm_nav/runtime/cmd", "json", "rm_nav.RuntimeCmd",
        "jsonschema", kRuntimeCmdSchema},
+      {kRuntimeLocalCostmapSceneChannelId, "/rm_nav/runtime/local_costmap_scene", "json",
+       "foxglove.SceneUpdate", "", ""},
+      {kRuntimeFootprintSceneChannelId, "/rm_nav/runtime/footprint_scene", "json",
+       "foxglove.SceneUpdate", "", ""},
+      {kRuntimeLaserLinkSceneChannelId, "/rm_nav/runtime/laser_link_scene", "json",
+       "foxglove.SceneUpdate", "", ""},
+      {kRuntimeBaseLinkSceneChannelId, "/rm_nav/runtime/base_link_scene", "json",
+       "foxglove.SceneUpdate", "", ""},
+      {kRuntimeCurrentScanSceneChannelId, "/rm_nav/runtime/current_scan_scene", "json",
+       "foxglove.SceneUpdate", "", ""},
   };
 }
 
@@ -486,6 +501,186 @@ std::string BuildSceneUpdateJson(const std::string& entity_id, std::string_view 
   output << "  ]\n";
   output << "}\n";
   return output.str();
+}
+
+std::vector<data::PointXYZI> CostmapOccupiedPoints(const data::GridMap2D& costmap,
+                                                   std::size_t max_points) {
+  std::vector<data::PointXYZI> points;
+  if (costmap.width == 0U || costmap.height == 0U || costmap.occupancy.empty()) {
+    return points;
+  }
+
+  const int center_x = static_cast<int>(costmap.width / 2U);
+  const int center_y = static_cast<int>(costmap.height / 2U);
+  const float cos_yaw = std::cos(costmap.origin.rpy.z);
+  const float sin_yaw = std::sin(costmap.origin.rpy.z);
+  points.reserve(std::min<std::size_t>(max_points, costmap.occupancy.size()));
+
+  for (std::uint32_t gy = 0; gy < costmap.height; ++gy) {
+    for (std::uint32_t gx = 0; gx < costmap.width; ++gx) {
+      const auto index = static_cast<std::size_t>(gy) * costmap.width + gx;
+      if (index >= costmap.occupancy.size() || costmap.occupancy[index] == 0U) {
+        continue;
+      }
+      const float local_x =
+          (static_cast<float>(static_cast<int>(gx) - center_x) + 0.5F) * costmap.resolution_m;
+      const float local_y =
+          (static_cast<float>(static_cast<int>(gy) - center_y) + 0.5F) * costmap.resolution_m;
+      data::PointXYZI point;
+      point.x = costmap.origin.position.x + cos_yaw * local_x - sin_yaw * local_y;
+      point.y = costmap.origin.position.y + sin_yaw * local_x + cos_yaw * local_y;
+      point.z = costmap.origin.position.z;
+      point.intensity = static_cast<float>(costmap.occupancy[index]);
+      points.push_back(point);
+      if (points.size() >= max_points) {
+        return points;
+      }
+    }
+  }
+  return points;
+}
+
+std::vector<data::PointXYZI> FootprintOutlinePoints(const config::RectMaskConfig& mask,
+                                                    const data::Pose3f& pose,
+                                                    std::size_t samples_per_edge) {
+  std::vector<data::PointXYZI> points;
+  if (!mask.enabled || !pose.is_valid || samples_per_edge == 0U) {
+    return points;
+  }
+
+  const std::array<common::Vec2f, 4> corners = {
+      common::Vec2f{mask.x_min_m, mask.y_min_m},
+      common::Vec2f{mask.x_max_m, mask.y_min_m},
+      common::Vec2f{mask.x_max_m, mask.y_max_m},
+      common::Vec2f{mask.x_min_m, mask.y_max_m},
+  };
+  const float cos_yaw = std::cos(pose.rpy.z);
+  const float sin_yaw = std::sin(pose.rpy.z);
+  points.reserve(samples_per_edge * 4U);
+
+  for (std::size_t edge = 0; edge < corners.size(); ++edge) {
+    const auto& start = corners[edge];
+    const auto& end = corners[(edge + 1U) % corners.size()];
+    for (std::size_t index = 0; index < samples_per_edge; ++index) {
+      const float alpha = samples_per_edge == 1U
+                              ? 0.0F
+                              : static_cast<float>(index) /
+                                    static_cast<float>(samples_per_edge - 1U);
+      const float local_x = start.x + (end.x - start.x) * alpha;
+      const float local_y = start.y + (end.y - start.y) * alpha;
+      data::PointXYZI point;
+      point.x = pose.position.x + cos_yaw * local_x - sin_yaw * local_y;
+      point.y = pose.position.y + sin_yaw * local_x + cos_yaw * local_y;
+      point.z = pose.position.z + 0.05F;
+      point.intensity = 1.0F;
+      points.push_back(point);
+    }
+  }
+  return points;
+}
+
+std::vector<data::PointXYZI> LaserLinkMarkerPoints(const config::ExtrinsicConfig& mount,
+                                                   const data::Pose3f& base_pose) {
+  std::vector<data::PointXYZI> points;
+  if (!base_pose.is_valid) {
+    return points;
+  }
+
+  const auto base_to_laser =
+      tf::MakeTransform(tf::kBaseLinkFrame, tf::kLaserFrame, mount.x_m, mount.y_m, mount.z_m,
+                        mount.roll_rad, mount.pitch_rad, mount.yaw_rad, base_pose.stamp);
+  const auto map_to_laser = tf::Compose(base_pose, base_to_laser);
+
+  data::PointXYZI center;
+  center.x = map_to_laser.position.x;
+  center.y = map_to_laser.position.y;
+  center.z = map_to_laser.position.z + 0.08F;
+  center.intensity = 1.0F;
+  points.push_back(center);
+
+  const float axis_len = 0.12F;
+  const float cos_yaw = std::cos(map_to_laser.rpy.z);
+  const float sin_yaw = std::sin(map_to_laser.rpy.z);
+  data::PointXYZI forward = center;
+  forward.x += axis_len * cos_yaw;
+  forward.y += axis_len * sin_yaw;
+  points.push_back(forward);
+
+  data::PointXYZI left = center;
+  left.x += axis_len * -sin_yaw;
+  left.y += axis_len * cos_yaw;
+  points.push_back(left);
+  return points;
+}
+
+std::vector<data::PointXYZI> BaseLinkMarkerPoints(const data::Pose3f& base_pose) {
+  std::vector<data::PointXYZI> points;
+  if (!base_pose.is_valid) {
+    return points;
+  }
+
+  data::PointXYZI center;
+  center.x = base_pose.position.x;
+  center.y = base_pose.position.y;
+  center.z = base_pose.position.z + 0.06F;
+  center.intensity = 1.0F;
+  points.push_back(center);
+
+  const float axis_len = 0.16F;
+  const float cos_yaw = std::cos(base_pose.rpy.z);
+  const float sin_yaw = std::sin(base_pose.rpy.z);
+  data::PointXYZI forward = center;
+  forward.x += axis_len * cos_yaw;
+  forward.y += axis_len * sin_yaw;
+  points.push_back(forward);
+
+  data::PointXYZI left = center;
+  left.x += axis_len * -sin_yaw;
+  left.y += axis_len * cos_yaw;
+  points.push_back(left);
+  return points;
+}
+
+data::PointXYZI TransformPointToMap(const data::PointXYZI& point,
+                                    const data::Pose3f& map_to_sensor) {
+  const float cr = std::cos(map_to_sensor.rpy.x);
+  const float sr = std::sin(map_to_sensor.rpy.x);
+  const float cp = std::cos(map_to_sensor.rpy.y);
+  const float sp = std::sin(map_to_sensor.rpy.y);
+  const float cy = std::cos(map_to_sensor.rpy.z);
+  const float sy = std::sin(map_to_sensor.rpy.z);
+
+  data::PointXYZI transformed = point;
+  transformed.x = map_to_sensor.position.x +
+                  (cy * cp) * point.x + (cy * sp * sr - sy * cr) * point.y +
+                  (cy * sp * cr + sy * sr) * point.z;
+  transformed.y = map_to_sensor.position.y +
+                  (sy * cp) * point.x + (sy * sp * sr + cy * cr) * point.y +
+                  (sy * sp * cr - cy * sr) * point.z;
+  transformed.z = map_to_sensor.position.z + (-sp) * point.x + (cp * sr) * point.y +
+                  (cp * cr) * point.z;
+  return transformed;
+}
+
+std::vector<data::PointXYZI> CurrentScanScenePoints(const data::LidarFrame& frame,
+                                                    const data::Pose3f& base_pose,
+                                                    const config::ExtrinsicConfig& mount,
+                                                    std::size_t max_points) {
+  std::vector<data::PointXYZI> points;
+  if (!base_pose.is_valid || frame.points.empty()) {
+    return points;
+  }
+
+  const auto base_to_laser =
+      tf::MakeTransform(tf::kBaseLinkFrame, tf::kLaserFrame, mount.x_m, mount.y_m, mount.z_m,
+                        mount.roll_rad, mount.pitch_rad, mount.yaw_rad, base_pose.stamp);
+  const auto map_to_laser = tf::Compose(base_pose, base_to_laser);
+  const auto sampled = DownsampleScenePoints(frame.points, max_points);
+  points.reserve(sampled.size());
+  for (const auto& point : sampled) {
+    points.push_back(TransformPointToMap(point, map_to_laser));
+  }
+  return points;
 }
 
 void PublishFoxgloveJson(debug::FoxgloveServer* server, std::uint32_t channel_id,
@@ -807,6 +1002,20 @@ common::Status Runtime::ValidatePhase0Contract() const {
 }
 
 common::Status Runtime::ValidateLoadedConfig() const {
+  if (loaded_config_.system.bringup_mode != "none" &&
+      loaded_config_.system.bringup_mode != "lidar_view") {
+    return common::Status::InvalidArgument("unsupported bringup_mode");
+  }
+  if (loaded_config_.sensors.imu_source != "synthetic" &&
+      loaded_config_.sensors.imu_source != "lidar_internal") {
+    return common::Status::InvalidArgument("unsupported imu source");
+  }
+  if (loaded_config_.sensors.imu_source == "lidar_internal" &&
+      (!loaded_config_.sensors.lidar_enabled ||
+       loaded_config_.sensors.lidar_source != "unitree_sdk")) {
+    return common::Status::InvalidArgument(
+        "lidar_internal imu source requires unitree_sdk lidar source");
+  }
   if (loaded_config_.frames.map != tf::kMapFrame ||
       loaded_config_.frames.odom != tf::kOdomFrame ||
       loaded_config_.frames.base_link != tf::kBaseLinkFrame ||
@@ -957,7 +1166,10 @@ common::Status Runtime::ConfigurePipeline() {
 
   if (loaded_config_.sensors.lidar_enabled) {
     drivers::lidar::L1DriverConfig lidar_config;
-    lidar_config.source = "synthetic";
+    lidar_config.source = loaded_config_.sensors.lidar_source;
+    lidar_config.device_path = loaded_config_.sensors.lidar_port;
+    lidar_config.baud_rate = loaded_config_.sensors.lidar_baud_rate;
+    lidar_config.cloud_scan_num = loaded_config_.sensors.lidar_cloud_scan_num;
     lidar_config.frame_rate_hz = mapping_mode_ ? loaded_config_.mapping.loop_hz : 10.0;
     lidar_config.points_per_frame = mapping_mode_
                                         ? static_cast<std::size_t>(std::max(
@@ -980,11 +1192,15 @@ common::Status Runtime::ConfigurePipeline() {
   }
 
   if (loaded_config_.sensors.imu_enabled) {
-    drivers::imu::ImuDriverConfig imu_config;
-    imu_config.source = "synthetic";
-    status = imu_driver_.Configure(imu_config);
-    if (!status.ok()) {
-      return status;
+    if (loaded_config_.sensors.imu_source == "synthetic") {
+      drivers::imu::ImuDriverConfig imu_config;
+      imu_config.source = "synthetic";
+      status = imu_driver_.Configure(imu_config);
+      if (!status.ok()) {
+        return status;
+      }
+    } else if (loaded_config_.sensors.imu_source != "lidar_internal") {
+      return common::Status::InvalidArgument("unsupported imu source");
     }
   }
 
@@ -1011,8 +1227,9 @@ common::Status Runtime::ConfigurePipeline() {
   if (loaded_config_.debug.websocket_enabled) {
     debug::FoxgloveServerOptions foxglove_options;
     foxglove_options.name = "rm_nav_runtime_mapping";
-    foxglove_options.host = "127.0.0.1";
-    foxglove_options.port = static_cast<std::uint16_t>(std::max(0, loaded_config_.debug.websocket_port));
+    foxglove_options.host = loaded_config_.debug.websocket_host;
+    foxglove_options.port =
+        static_cast<std::uint16_t>(std::max(0, loaded_config_.debug.websocket_port));
     status = foxglove_server_.Start(foxglove_options);
     if (!status.ok()) {
       utils::LogWarn("runtime",
@@ -1114,7 +1331,12 @@ void Runtime::DriverThreadMain() {
 
   while (!stop_requested_.load(std::memory_order_acquire)) {
     if (loaded_config_.sensors.imu_enabled) {
-      auto packet = imu_driver_.PollPacket();
+      std::optional<data::ImuPacket> packet;
+      if (loaded_config_.sensors.imu_source == "lidar_internal") {
+        packet = lidar_driver_.PollImuPacket();
+      } else {
+        packet = imu_driver_.PollPacket();
+      }
       if (packet.has_value()) {
         sensor_sync_.PushImuPacket(*packet);
         driver_imu_packets_.fetch_add(1, std::memory_order_relaxed);
@@ -1216,15 +1438,18 @@ void Runtime::SyncThreadMain() {
       }
     }
 
-    if (fsm_snapshot.localization_active &&
-        combat_pipeline_ready_.load(std::memory_order_acquire)) {
-      sync::SyncedFrameHandle localization_frame;
-      if (!CloneSyncedFrame(*synced_handle->get(), &localization_frame)) {
-        utils::LogWarn("sync", "fanout pool exhausted for localization");
-      } else {
-        localization_.EnqueueFrame(std::move(localization_frame));
+    const bool bringup_mode = PerceptionBringupMode();
+    if ((fsm_snapshot.localization_active &&
+         combat_pipeline_ready_.load(std::memory_order_acquire)) ||
+        bringup_mode) {
+      if (!bringup_mode) {
+        sync::SyncedFrameHandle localization_frame;
+        if (!CloneSyncedFrame(*synced_handle->get(), &localization_frame)) {
+          utils::LogWarn("sync", "fanout pool exhausted for localization");
+        } else {
+          localization_.EnqueueFrame(std::move(localization_frame));
+        }
       }
-
       sync::SyncedFrameHandle preprocess_frame;
       if (!CloneSyncedFrame(*synced_handle->get(), &preprocess_frame)) {
         utils::LogWarn("sync", "fanout pool exhausted for preprocess");
@@ -1294,8 +1519,10 @@ void Runtime::PoseThreadMain() {
 void Runtime::PerceptionThreadMain() {
   while (!stop_requested_.load(std::memory_order_acquire)) {
     const auto fsm_snapshot = fsm_snapshot_.ReadSnapshot();
-    if (!fsm_snapshot.localization_active ||
-        !combat_pipeline_ready_.load(std::memory_order_acquire)) {
+    const bool bringup_mode = PerceptionBringupMode();
+    if ((!fsm_snapshot.localization_active ||
+         !combat_pipeline_ready_.load(std::memory_order_acquire)) &&
+        !bringup_mode) {
       common::SleepFor(std::chrono::milliseconds(10));
       continue;
     }
@@ -1310,8 +1537,15 @@ void Runtime::PerceptionThreadMain() {
       continue;
     }
 
-    const auto pose = localization_.LatestResult().map_to_base;
+    auto pose = localization_.LatestResult().map_to_base;
+    if (bringup_mode && !pose.is_valid) {
+      pose = MakeMapPose(filtered_frame->get()->stamp,
+                         static_cast<float>(loaded_config_.spawn.x_m),
+                         static_cast<float>(loaded_config_.spawn.y_m),
+                         static_cast<float>(loaded_config_.spawn.theta_rad));
+    }
     if (pose.is_valid) {
+      latest_filtered_scan_.Publish(*filtered_frame->get());
       local_costmap_builder_.BuildAndPublish(*filtered_frame->get(), pose);
       mot_manager_.UpdateAndPublish(*filtered_frame->get(), pose);
       const auto mot_perf = mot_manager_.LatestPerf();
@@ -1550,9 +1784,13 @@ void Runtime::DebugThreadMain() {
           next_scalar_publish = now + scalar_period;
           const auto scalar_begin_ns = common::NowNs();
           WriteFsmDebugSnapshot(fsm_snapshot, RuntimeDebugOutputDir());
-          const auto current_pose =
-              fsm_snapshot.mapping_active ? mapping_pose_.ReadSnapshot()
-                                          : localization_.LatestResult().map_to_base;
+          auto current_pose = fsm_snapshot.mapping_active ? mapping_pose_.ReadSnapshot()
+                                                          : localization_.LatestResult().map_to_base;
+          if (PerceptionBringupMode() && !current_pose.is_valid) {
+            current_pose = MakeMapPose(now, static_cast<float>(loaded_config_.spawn.x_m),
+                                       static_cast<float>(loaded_config_.spawn.y_m),
+                                       static_cast<float>(loaded_config_.spawn.theta_rad));
+          }
           const auto current_cmd =
               fsm_snapshot.mapping_active ? mapping_cmd_.ReadSnapshot() : safety_cmd_.ReadSnapshot();
           const auto perf_json = BuildPerfStatusJson(
@@ -1593,6 +1831,12 @@ void Runtime::DebugThreadMain() {
         if (allow_pointcloud_publish && !suppress_scene && fsm_snapshot.mapping_active) {
           next_pointcloud_publish = now + pointcloud_period;
           const auto publish_begin_ns = common::NowNs();
+          auto current_pose = mapping_pose_.ReadSnapshot();
+          if (!current_pose.is_valid) {
+            current_pose = MakeMapPose(now, static_cast<float>(loaded_config_.spawn.x_m),
+                                       static_cast<float>(loaded_config_.spawn.y_m),
+                                       static_cast<float>(loaded_config_.spawn.theta_rad));
+          }
           WriteMappingDebugSnapshot(mapping_engine_, waypoint_manager_,
                                     mapping_pose_.ReadSnapshot(), mapping_cmd_.ReadSnapshot(),
                                     RuntimeDebugOutputDir());
@@ -1611,13 +1855,112 @@ void Runtime::DebugThreadMain() {
                               waypoint_json, now);
           PublishFoxgloveJson(&foxglove_server_, kRuntimePartialMapSceneChannelId,
                               partial_map_scene_json, now);
+          const auto costmap_scene_json = BuildSceneUpdateJson(
+              "runtime_local_costmap", tf::kMapFrame,
+              CostmapOccupiedPoints(local_costmap_builder_.LatestCostmap(), 1200U), 0.10F, 0.04F,
+              {0.95F, 0.38F, 0.12F, 0.82F});
+          PublishFoxgloveJson(&foxglove_server_, kRuntimeLocalCostmapSceneChannelId,
+                              costmap_scene_json, now);
+          const auto footprint_scene_json = BuildSceneUpdateJson(
+              "runtime_footprint", tf::kMapFrame,
+              FootprintOutlinePoints(loaded_config_.sensors.lidar_self_mask, current_pose, 12U),
+              0.05F, 0.08F, {0.10F, 0.75F, 0.95F, 0.95F});
+          PublishFoxgloveJson(&foxglove_server_, kRuntimeFootprintSceneChannelId,
+                              footprint_scene_json, now);
+          const auto laser_link_scene_json = BuildSceneUpdateJson(
+              "runtime_laser_link", tf::kMapFrame,
+              LaserLinkMarkerPoints(loaded_config_.sensors.lidar_mount, current_pose), 0.06F,
+              0.10F, {1.00F, 0.95F, 0.15F, 0.98F});
+          PublishFoxgloveJson(&foxglove_server_, kRuntimeLaserLinkSceneChannelId,
+                              laser_link_scene_json, now);
+          const auto base_link_scene_json = BuildSceneUpdateJson(
+              "runtime_base_link", tf::kMapFrame, BaseLinkMarkerPoints(current_pose), 0.07F,
+              0.11F, {0.15F, 0.95F, 0.35F, 0.98F});
+          PublishFoxgloveJson(&foxglove_server_, kRuntimeBaseLinkSceneChannelId,
+                              base_link_scene_json, now);
+          const auto current_scan_scene_json = BuildSceneUpdateJson(
+              "runtime_current_scan", tf::kMapFrame,
+              CurrentScanScenePoints(latest_filtered_scan_.ReadSnapshot(), current_pose,
+                                     loaded_config_.sensors.lidar_mount, 1600U),
+              0.04F, 0.04F, {0.92F, 0.92F, 0.92F, 0.75F});
+          PublishFoxgloveJson(&foxglove_server_, kRuntimeCurrentScanSceneChannelId,
+                              current_scan_scene_json, now);
           foxglove_publish_latency_ns_.store(common::NowNs() - publish_begin_ns,
                                              std::memory_order_release);
         } else if (allow_pointcloud_publish && !suppress_scene &&
                    fsm_snapshot.localization_active) {
           next_pointcloud_publish = now + pointcloud_period;
           const auto publish_begin_ns = common::NowNs();
+          auto current_pose = localization_.LatestResult().map_to_base;
           WriteDebugSnapshot(localization_, planner_, RuntimeDebugOutputDir());
+          const auto costmap_scene_json = BuildSceneUpdateJson(
+              "runtime_local_costmap", tf::kMapFrame,
+              CostmapOccupiedPoints(local_costmap_builder_.LatestCostmap(), 1200U), 0.10F, 0.04F,
+              {0.95F, 0.38F, 0.12F, 0.82F});
+          PublishFoxgloveJson(&foxglove_server_, kRuntimeLocalCostmapSceneChannelId,
+                              costmap_scene_json, now);
+          const auto footprint_scene_json = BuildSceneUpdateJson(
+              "runtime_footprint", tf::kMapFrame,
+              FootprintOutlinePoints(loaded_config_.sensors.lidar_self_mask, current_pose, 12U),
+              0.05F, 0.08F, {0.10F, 0.75F, 0.95F, 0.95F});
+          PublishFoxgloveJson(&foxglove_server_, kRuntimeFootprintSceneChannelId,
+                              footprint_scene_json, now);
+          const auto laser_link_scene_json = BuildSceneUpdateJson(
+              "runtime_laser_link", tf::kMapFrame,
+              LaserLinkMarkerPoints(loaded_config_.sensors.lidar_mount, current_pose), 0.06F,
+              0.10F, {1.00F, 0.95F, 0.15F, 0.98F});
+          PublishFoxgloveJson(&foxglove_server_, kRuntimeLaserLinkSceneChannelId,
+                              laser_link_scene_json, now);
+          const auto base_link_scene_json = BuildSceneUpdateJson(
+              "runtime_base_link", tf::kMapFrame, BaseLinkMarkerPoints(current_pose), 0.07F,
+              0.11F, {0.15F, 0.95F, 0.35F, 0.98F});
+          PublishFoxgloveJson(&foxglove_server_, kRuntimeBaseLinkSceneChannelId,
+                              base_link_scene_json, now);
+          const auto current_scan_scene_json = BuildSceneUpdateJson(
+              "runtime_current_scan", tf::kMapFrame,
+              CurrentScanScenePoints(latest_filtered_scan_.ReadSnapshot(), current_pose,
+                                     loaded_config_.sensors.lidar_mount, 1600U),
+              0.04F, 0.04F, {0.92F, 0.92F, 0.92F, 0.75F});
+          PublishFoxgloveJson(&foxglove_server_, kRuntimeCurrentScanSceneChannelId,
+                              current_scan_scene_json, now);
+          foxglove_publish_latency_ns_.store(common::NowNs() - publish_begin_ns,
+                                             std::memory_order_release);
+        } else if (allow_pointcloud_publish && !suppress_scene && PerceptionBringupMode()) {
+          next_pointcloud_publish = now + pointcloud_period;
+          const auto publish_begin_ns = common::NowNs();
+          const auto current_pose = MakeMapPose(now, static_cast<float>(loaded_config_.spawn.x_m),
+                                                static_cast<float>(loaded_config_.spawn.y_m),
+                                                static_cast<float>(loaded_config_.spawn.theta_rad));
+          const auto costmap_scene_json = BuildSceneUpdateJson(
+              "runtime_local_costmap", tf::kMapFrame,
+              CostmapOccupiedPoints(local_costmap_builder_.LatestCostmap(), 1200U), 0.10F, 0.04F,
+              {0.95F, 0.38F, 0.12F, 0.82F});
+          PublishFoxgloveJson(&foxglove_server_, kRuntimeLocalCostmapSceneChannelId,
+                              costmap_scene_json, now);
+          const auto footprint_scene_json = BuildSceneUpdateJson(
+              "runtime_footprint", tf::kMapFrame,
+              FootprintOutlinePoints(loaded_config_.sensors.lidar_self_mask, current_pose, 12U),
+              0.05F, 0.08F, {0.10F, 0.75F, 0.95F, 0.95F});
+          PublishFoxgloveJson(&foxglove_server_, kRuntimeFootprintSceneChannelId,
+                              footprint_scene_json, now);
+          const auto laser_link_scene_json = BuildSceneUpdateJson(
+              "runtime_laser_link", tf::kMapFrame,
+              LaserLinkMarkerPoints(loaded_config_.sensors.lidar_mount, current_pose), 0.06F,
+              0.10F, {1.00F, 0.95F, 0.15F, 0.98F});
+          PublishFoxgloveJson(&foxglove_server_, kRuntimeLaserLinkSceneChannelId,
+                              laser_link_scene_json, now);
+          const auto base_link_scene_json = BuildSceneUpdateJson(
+              "runtime_base_link", tf::kMapFrame, BaseLinkMarkerPoints(current_pose), 0.07F,
+              0.11F, {0.15F, 0.95F, 0.35F, 0.98F});
+          PublishFoxgloveJson(&foxglove_server_, kRuntimeBaseLinkSceneChannelId,
+                              base_link_scene_json, now);
+          const auto current_scan_scene_json = BuildSceneUpdateJson(
+              "runtime_current_scan", tf::kMapFrame,
+              CurrentScanScenePoints(latest_filtered_scan_.ReadSnapshot(), current_pose,
+                                     loaded_config_.sensors.lidar_mount, 1600U),
+              0.04F, 0.04F, {0.92F, 0.92F, 0.92F, 0.75F});
+          PublishFoxgloveJson(&foxglove_server_, kRuntimeCurrentScanSceneChannelId,
+                              current_scan_scene_json, now);
           foxglove_publish_latency_ns_.store(common::NowNs() - publish_begin_ns,
                                              std::memory_order_release);
         }
@@ -1839,6 +2182,14 @@ common::Status Runtime::SaveMappingArtifacts(localization::StaticMap* exported_m
                      (exported_map != nullptr ? exported_map->global_map_path
                                               : local_exported_map.global_map_path));
   return common::Status::Ok();
+}
+
+bool Runtime::PerceptionBringupMode() const {
+  if (loaded_config_.system.bringup_mode == "lidar_view") {
+    return true;
+  }
+  return loaded_config_.sensors.lidar_source == "unitree_sdk" &&
+         !loaded_config_.localization.enabled;
 }
 
 void Runtime::LogOncePerThread(const char* component, const std::string& message,

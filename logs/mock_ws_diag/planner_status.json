@@ -1,0 +1,23 @@
+{
+  "mode": "approach_center",
+  "distance_to_goal_m": 3.63173,
+  "distance_to_center_m": 3.63173,
+  "yaw_error_rad": -1,
+  "reached": false,
+  "cmd": {"vx": -1, "vy": 0.8, "wz": -1},
+  "dwa_score": {
+    "goal": 0,
+    "path": 0.516843,
+    "smooth": 0.125,
+    "heading": 3.94098,
+    "clearance": 5,
+    "velocity": 0.256125,
+    "dynamic": -13.7591,
+    "dynamic_max_risk": 3.29602,
+    "dynamic_integrated_risk": 0.915829,
+    "dynamic_clearance_min": 0.0845558,
+    "dynamic_risk_05": 0.0386304,
+    "dynamic_risk_10": 0,
+    "total": -3.92019
+  }
+}
