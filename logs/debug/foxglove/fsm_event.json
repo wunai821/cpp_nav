@@ -1,5 +1,5 @@
 {
-  "event_code": "NONE",
-  "summary": "save requested",
-  "stamp_ns": 43923720089534
+  "event_code": "MAP_VALIDATION_FAILED",
+  "summary": "map validation failed",
+  "stamp_ns": 65488772887250
 }

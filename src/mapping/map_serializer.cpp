@@ -62,7 +62,11 @@ std::vector<std::uint8_t> BuildPngData(const data::GridMap2D& occupancy) {
     for (std::uint32_t x = 0; x < occupancy.width; ++x) {
       const auto value =
           occupancy.occupancy[static_cast<std::size_t>(y) * occupancy.width + x];
-      raw.push_back(static_cast<std::uint8_t>(255U - value));
+      if (value == 255U) {
+        raw.push_back(127U);
+      } else {
+        raw.push_back(static_cast<std::uint8_t>(255U - value));
+      }
     }
   }
 

@@ -1,0 +1,7 @@
+websocket:
+  enabled: false
+  host: 127.0.0.1
+  port: 8765
+  publish_hz: 5
+  scalar_publish_hz: 10
+  pointcloud_publish_hz: 2

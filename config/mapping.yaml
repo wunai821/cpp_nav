@@ -3,7 +3,10 @@
 mapping:
   enabled: false  # 是否启用 runtime 热身建图模式；独立 warmup_mapping_tool 不受该开关限制。
   loop_hz: 10  # 建图主循环频率，单位 Hz。
-  output_dir: ../maps/warmup/active  # 建图导出目录，输出 global_map.pcd / occupancy.bin / occupancy.png / map_meta.json。
+  output_dir: ../maps/warmup/active  # 当前可用地图目录；通过质检的新图最终会切到这里。
+  staging_dir: ../maps/warmup/staging  # 建图过程中的临时导出目录；先写 staging，再校验并切 active。
+  last_good_dir: ../maps/warmup/last_good  # 上一份通过质检的可回退地图目录；active 切换前会先备份到这里。
+  failed_dir: ../maps/warmup/failed  # 质检失败或保存失败时保留的坏图目录，便于现场排障。
   waypoint_path: warmup_waypoints.txt  # 固定巡航路径文件，相对当前 config 目录解析。
   route_speed_mps: 0.7  # 固定巡航时的目标移动速度，单位米每秒。
   route_reach_tolerance_m: 0.35  # 距离当前 waypoint 小于该值后切到下一个 waypoint，单位米。
@@ -13,5 +16,52 @@ mapping:
   z_max_m: 1.2  # 2D 投影保留的最大高度，高于该值的点不参与占据栅格生成。
   occupancy_resolution_m: 0.1  # 占据栅格分辨率，单位米每格。
   occupancy_padding_m: 1.0  # 投影到 2D 地图时在边界外额外留出的 padding，单位米。
+  occupancy_hit_log_odds: 0.85  # 概率式 2D occupancy 的 hit 增量；射线命中障碍时给对应格子增加的 log-odds。
+  occupancy_miss_log_odds: 0.40  # 概率式 2D occupancy 的 miss 增量；ray casting 穿过空闲区域时给格子施加的 free 更新强度。
+  occupancy_min_log_odds: -2.0  # 概率式 2D occupancy 的最小 log-odds 截断值；避免 free 更新无限累加。
+  occupancy_max_log_odds: 3.5  # 概率式 2D occupancy 的最大 log-odds 截断值；避免 hit 更新无限累加。
+  occupancy_free_threshold_log_odds: -0.2  # unknown/free/occupied 分层中的 free 阈值；低于该值的格子导出为 free。
+  occupancy_occupied_threshold_log_odds: 0.6  # unknown/free/occupied 分层中的 occupied 阈值；高于该值的格子导出为 occupied。
+  occupancy_inflation_radius_m: 0.15  # 2D occupancy 导出阶段的简单膨胀半径，单位米；会把已占据格子周围一圈提成高代价值，增强后续导航保守性。
   synthetic_scan_radius_m: 8.0  # 热身建图工具生成假扫描时的最大观测半径，单位米。
   synthetic_points_per_frame: 480  # 热身建图工具每帧采样的点数上限。
+  dynamic_suppression_enabled: true  # 是否启用建图阶段的动态点抑制；建议热身建图默认打开，避免近场移动机器人直接写进地图。
+  dynamic_near_field_radius_m: 1.0  # 近场动态障碍剔除半径，单位米；距离雷达太近的点默认更可能来自自车周围或掠过的动态目标。
+  dynamic_consistency_frames: 2  # 多帧一致性保留所需的最小连续观测帧数；只有稳定出现的点才正式写入全局地图。
+  dynamic_pending_ttl_frames: 3  # 动态点候选缓存的存活帧数；超过该时间还未形成稳定观测就丢弃，避免临时动态点长期占缓存。
+  dynamic_known_obstacle_mask_enabled: true  # 是否把 MOT 已知动态障碍显式喂给建图并做禁写图；建议默认打开，比单纯按近场半径抑制更聪明。
+  dynamic_known_obstacle_margin_m: 0.25  # 已知动态障碍写图禁区的额外膨胀半径，单位米；会在 obstacle.radius_m 基础上扩一圈保险边。
+  dynamic_known_obstacle_min_confidence: 0.35  # 只有置信度高于该值的动态障碍才参与建图禁写图，避免低质量 MOT 结果误伤静态结构。
+  pose_source: odom  # 建图位姿来源；可选 odom / scan_to_scan_icp / scan_to_map_icp。建议热身建图优先试 scan_to_scan_icp 或 scan_to_map_icp。
+  frontend_match_max_iterations: 10  # 建图前端 ICP 的最大迭代次数；提高能增强收敛但也更吃算力。
+  frontend_correspondence_distance_m: 0.75  # 建图前端 ICP 的对应点距离阈值，单位米。
+  frontend_min_match_score: 0.2  # 建图前端 ICP 的最低匹配得分；低于该值时回退到外部 pose。
+  frontend_match_max_points: 160  # 建图前端参与匹配的最大点数；超过后会均匀下采样。
+  frontend_min_map_points: 80  # scan_to_map_icp 前端启用所需的最小地图点数；过小时直接回退到外部 pose。
+  frontend_submap_radius_m: 2.0  # scan_to_map_icp 前端截取局部子图的半径，单位米；只取预测位姿周围的局部点参与匹配。
+  frontend_submap_max_points: 320  # scan_to_map_icp 前端局部子图保留的最大点数；超过后均匀下采样，避免整图点数拖慢前端。
+  keyframe_translation_threshold_m: 0.5  # 关键帧平移触发阈值；当前位置相对上一关键帧平移超过该值时缓存一个新 keyframe。
+  keyframe_yaw_threshold_rad: 0.2  # 关键帧偏航触发阈值；相对上一关键帧 yaw 变化超过该值时缓存一个新 keyframe。
+  max_keyframes: 64  # 建图关键帧缓存上限；超过后按先进先出淘汰最旧关键帧。
+  keyframe_max_points: 160  # 每个关键帧最多保留的下采样局部点数，用于后续回访检测和轻量回环。
+  loop_candidate_distance_threshold_m: 1.0  # 回访候选粗筛的平面距离阈值；当前位置与历史 keyframe 距离小于该值时才认为值得尝试回环。
+  loop_candidate_min_time_separation_s: 5.0  # 回访候选粗筛的最小时间间隔；过滤掉过近的相邻关键帧，避免把连续帧误判成回环。
+  loop_candidate_max_yaw_delta_rad: 0.6  # 回访候选粗筛允许的最大航向差；超过该值通常说明姿态差异过大，不进入后续轻量匹配。
+  loop_matcher: icp  # 轻量回环局部匹配器类型；当前推荐使用 icp，ndt 仅保留接口还未真正实现。
+  loop_match_max_iterations: 8  # 轻量回环局部匹配的最大迭代次数；过大容易拖慢热身建图主循环。
+  loop_match_correspondence_distance_m: 0.75  # 轻量回环局部匹配的对应点最大距离阈值，单位米。
+  loop_match_min_score: 0.55  # 轻量回环局部匹配的最低得分阈值；低于该值通常说明候选不够可信。
+  loop_match_max_points: 160  # 当前帧参与轻量回环匹配的最大点数；超过后会做均匀下采样，保证算力稳定。
+  loop_correction_min_score: 0.6  # 小修正接受器的最低得分阈值；只有高于该值的局部匹配结果才允许进入 correction 候选。
+  loop_correction_max_translation_m: 0.25  # 小修正接受器允许的最大平移修正量，单位米；超过该值认为回环修正过猛，直接拒绝。
+  loop_correction_max_yaw_rad: 0.15  # 小修正接受器允许的最大 yaw 修正量，单位弧度；超过该值容易把地图拉坏。
+  loop_correction_max_consecutive_failures: 3  # 小修正接受器允许的最大连续失败次数；超过后暂不接受新的 correction 候选。
+  loop_correction_apply_translation_step_m: 0.05  # correction 实际注入 mapping pose 时，每帧允许施加的最大平移步长，单位米；用于把修正平滑摊开。
+  loop_correction_apply_yaw_step_rad: 0.03  # correction 实际注入 mapping pose 时，每帧允许施加的最大 yaw 步长，单位弧度；避免姿态瞬时大跳变。
+  validation_min_global_points: 200  # 地图质检的最小全局点数阈值，低于该值视为坏图。
+  validation_min_occupied_cells: 20  # 地图质检的最小占据栅格数量阈值，低于该值视为覆盖不足。
+  validation_min_width: 8  # 地图质检允许的最小栅格宽度，低于该值视为地图边界异常。
+  validation_min_height: 8  # 地图质检允许的最小栅格高度，低于该值视为地图边界异常。
+  validation_min_occupied_ratio: 0.001  # 地图质检的最小占据比例阈值，过低通常表示地图几乎空白。
+  validation_max_loop_translation_regression_m: 0.05  # 保存前轨迹质检中，optimized pose 相对 raw pose 允许的回访平移一致性退化上限；超过说明轻量回环可能把轨迹拉坏。
+  validation_max_loop_yaw_regression_rad: 0.03  # 保存前轨迹质检中，optimized pose 相对 raw pose 允许的回访 yaw 一致性退化上限；超过说明纠偏后姿态一致性变差。

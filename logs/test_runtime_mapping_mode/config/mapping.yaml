@@ -13,3 +13,8 @@ mapping:
   occupancy_padding_m: 1.0
   synthetic_scan_radius_m: 8.0
   synthetic_points_per_frame: 240
+  validation_min_global_points: 100
+  validation_min_occupied_cells: 10
+  validation_min_width: 8
+  validation_min_height: 8
+  validation_min_occupied_ratio: 0.0005

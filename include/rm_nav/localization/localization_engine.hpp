@@ -16,6 +16,7 @@
 #include "rm_nav/localization/map_odom_fuser.hpp"
 #include "rm_nav/localization/ndt_matcher.hpp"
 #include "rm_nav/localization/pose_quality_estimator.hpp"
+#include "rm_nav/localization/relocalization_manager.hpp"
 #include "rm_nav/sync/sensor_sync_buffer.hpp"
 #include "rm_nav/tf/tf_tree_lite.hpp"
 
@@ -26,6 +27,7 @@ struct LocalizationResult {
   data::Pose3f map_to_base{};
   data::Pose3f odom_to_base{};
   LocalizationStatus status{};
+  RelocalizationStatus relocalization{};
   common::TimeNs matcher_latency_ns{0};
   common::TimeNs processing_latency_ns{0};
   bool light_match_mode{false};
@@ -76,6 +78,7 @@ class LocalizationEngine {
   IcpMatcher icp_matcher_{};
   NdtMatcher ndt_matcher_{};
   ScanMatcher* matcher_{nullptr};
+  RelocalizationManager relocalization_manager_{};
   InitialPoseProvider initial_pose_provider_{{}};
   MapOdomFuser map_odom_fuser_{};
   PoseQualityEstimator quality_estimator_{{}};

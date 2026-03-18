@@ -66,6 +66,8 @@ common::Status PlannerCoordinator::Initialize(const config::PlannerConfig& confi
   config_ = config;
   static_map_ = static_map;
   goal_manager_ = GoalManager(config);
+  mission_manager_ = MissionManager(config);
+  center_hold_controller_ = CenterHoldController(config);
   omni_dwa_ = OmniDwa(config);
   global_path_.Publish(data::Path2D{});
   latest_cmd_.Publish(data::ChassisCmd{});
@@ -96,6 +98,29 @@ common::Status PlannerCoordinator::PlanToGoal(
   const GoalState goal =
       goal_pose.is_valid ? goal_manager_.UpdateToward(current_pose, goal_pose)
                          : goal_manager_.Update(current_pose);
+  const MissionStatus mission = mission_manager_.Update(current_pose, goal);
+  if (mission.reached) {
+    auto status = center_hold_controller_.BuildHoldCommand(current_pose, goal.target_pose, path,
+                                                           cmd);
+    if (!status.ok()) {
+      return status;
+    }
+    PlannerStatus planner_status;
+    planner_status.mode = mission.mode;
+    planner_status.distance_to_goal_m = goal.distance_to_target_m;
+    planner_status.distance_to_center_m = goal.distance_to_center_m;
+    planner_status.yaw_error_rad = goal.yaw_error_rad;
+    planner_status.reached = true;
+    planner_status.settling = mission.settling;
+    planner_status.hold_drifted = mission.hold_drifted;
+    planner_status.path_available = !path->points.empty();
+    planner_status.hold_frames_in_goal = mission.consecutive_in_goal_frames;
+    planner_status.hold_settle_elapsed_ns = mission.settle_elapsed_ns;
+    planner_status.planning_latency_ns = common::NowNs() - begin_ns;
+    latest_status_.Publish(planner_status);
+    return common::Status::Ok();
+  }
+
   auto status = global_astar_.Plan(static_map_.occupancy, current_pose, goal.target_pose, path);
   if (!status.ok()) {
     return status;
@@ -118,12 +143,16 @@ common::Status PlannerCoordinator::PlanToGoal(
   cmd->stamp = current_pose.stamp;
 
   PlannerStatus planner_status;
-  planner_status.mode = goal.mode;
+  planner_status.mode = mission.mode;
   planner_status.distance_to_goal_m = goal.distance_to_target_m;
   planner_status.distance_to_center_m = goal.distance_to_center_m;
   planner_status.yaw_error_rad = goal.yaw_error_rad;
-  planner_status.reached = goal.reached;
+  planner_status.reached = mission.reached;
+  planner_status.settling = mission.settling;
+  planner_status.hold_drifted = mission.hold_drifted;
   planner_status.path_available = !path->points.empty();
+  planner_status.hold_frames_in_goal = mission.consecutive_in_goal_frames;
+  planner_status.hold_settle_elapsed_ns = mission.settle_elapsed_ns;
   planner_status.dwa_score = dwa_score;
   planner_status.planning_latency_ns = common::NowNs() - begin_ns;
   latest_status_.Publish(planner_status);

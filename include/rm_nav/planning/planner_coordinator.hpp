@@ -12,8 +12,10 @@
 #include "rm_nav/data/path.hpp"
 #include "rm_nav/data/pose.hpp"
 #include "rm_nav/localization/map_loader.hpp"
+#include "rm_nav/planning/center_hold_controller.hpp"
 #include "rm_nav/planning/global_astar.hpp"
 #include "rm_nav/planning/goal_manager.hpp"
+#include "rm_nav/planning/mission_manager.hpp"
 #include "rm_nav/planning/omni_dwa.hpp"
 
 namespace rm_nav::planning {
@@ -24,7 +26,11 @@ struct PlannerStatus {
   float distance_to_center_m{0.0F};
   float yaw_error_rad{0.0F};
   bool reached{false};
+  bool settling{false};
+  bool hold_drifted{false};
   bool path_available{false};
+  int hold_frames_in_goal{0};
+  common::TimeNs hold_settle_elapsed_ns{0};
   DwaScore dwa_score{};
   common::TimeNs planning_latency_ns{0};
 };
@@ -55,6 +61,8 @@ class PlannerCoordinator {
   config::PlannerConfig config_{};
   localization::StaticMap static_map_{};
   GoalManager goal_manager_{{}};
+  MissionManager mission_manager_{{}};
+  CenterHoldController center_hold_controller_{{}};
   GlobalAStar global_astar_{};
   OmniDwa omni_dwa_{{}};
   common::DoubleBuffer<data::Path2D> global_path_{};

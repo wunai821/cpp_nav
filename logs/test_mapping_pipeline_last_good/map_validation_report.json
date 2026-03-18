@@ -1,0 +1,19 @@
+{
+  "passed": true,
+  "trajectory_consistency_passed": true,
+  "global_point_count": 5,
+  "occupied_cell_count": 1599,
+  "trajectory_sample_count": 3,
+  "loop_consistency_sample_count": 0,
+  "occupied_ratio": 1,
+  "raw_loop_translation_error_mean_m": 0,
+  "optimized_loop_translation_error_mean_m": 0,
+  "raw_loop_yaw_error_mean_rad": 0,
+  "optimized_loop_yaw_error_mean_rad": 0,
+  "loop_translation_gain_m": 0,
+  "loop_yaw_gain_rad": 0,
+  "width": 41,
+  "height": 39,
+  "resolution_m": 0.1,
+  "summary": "pass"
+}

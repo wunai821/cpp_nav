@@ -16,6 +16,8 @@ struct GoalState {
   float distance_to_target_m{0.0F};
   float distance_to_center_m{0.0F};
   float yaw_error_rad{0.0F};
+  bool within_center_radius{false};
+  bool yaw_aligned{false};
   bool reached{false};
 };
 
@@ -30,7 +32,6 @@ class GoalManager {
   GoalState BuildState(const data::Pose3f& current_pose, const data::Pose3f& target_pose);
 
   config::PlannerConfig config_{};
-  bool hold_active_{false};
 };
 
 }  // namespace rm_nav::planning

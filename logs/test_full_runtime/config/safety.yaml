@@ -1,0 +1,5 @@
+safety:
+  loop_hz: 20
+  heartbeat_timeout_ms: 100
+  deadman_timeout_ms: 250
+  emergency_stop_distance_m: 0.4

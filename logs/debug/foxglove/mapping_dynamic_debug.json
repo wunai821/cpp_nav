@@ -1,0 +1,11 @@
+{
+  "frame_index": 4,
+  "suppression_enabled": true,
+  "pending_points": 113,
+  "accepted_points": 3,
+  "rejected_points": 190,
+  "rejected_near_field": 0,
+  "rejected_known_obstacle_mask": 25,
+  "rejected_duplicate_voxel": 165,
+  "stale_pending_evictions": 0
+}

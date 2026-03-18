@@ -14,6 +14,13 @@ localization:  # 定位主配置，用于地图加载、scan matcher 和 map->od
   slow_match_threshold_ms: 12  # 单帧匹配耗时超过该阈值时切换更轻参数，单位毫秒。
   reduced_max_iterations: 4  # 降级匹配模式下的最大迭代次数。
   reduced_scan_stride: 2  # 降级匹配模式下的扫描跳点步长，2 表示每隔 1 个点取 1 个。
-  relocalization_failure_threshold: 4  # matcher 连续失败达到该次数后进入基础重定位预测策略。
+  relocalization_failure_threshold: 4  # matcher 连续失败达到该次数后进入 coarse relocalization 模式。
+  relocalization_retry_interval_ms: 400  # coarse relocalization 的最小重试间隔，避免每帧重扫全局，单位毫秒。
+  relocalization_submap_radius_m: 6.0  # coarse relocalization 截取局部子图半径，单位米。
+  relocalization_submap_max_points: 640  # coarse relocalization 局部子图最大点数。
+  relocalization_max_iterations: 14  # coarse relocalization 匹配最大迭代次数。
+  relocalization_min_match_score: 0.35  # coarse relocalization 认为成功的最小得分阈值。
+  relocalization_linear_search_step_m: 1.5  # coarse relocalization 多候选平移搜索步长，单位米。
+  relocalization_yaw_search_step_rad: 0.35  # coarse relocalization 多候选偏航搜索步长，单位弧度。
   map_to_odom_guard_translation_m: 0.8  # 单帧 map->odom 平移修正允许的最大跳变量，超过则保护并拒绝更新，单位米。
   map_to_odom_guard_yaw_rad: 0.45  # 单帧 map->odom 偏航修正允许的最大跳变量，超过则保护并拒绝更新，单位弧度。

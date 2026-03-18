@@ -53,6 +53,13 @@ rm_nav::data::SyncedFrame MakeFrame(const rm_nav::localization::StaticMap& map,
 
 int main() {
   rm_nav::config::LocalizationConfig localization_config;
+  localization_config.relocalization_failure_threshold = 1;
+  localization_config.relocalization_retry_interval_ms = 0;
+  localization_config.relocalization_linear_search_step_m = 1.5;
+  localization_config.relocalization_yaw_search_step_rad = 0.35;
+  localization_config.relocalization_min_match_score = 0.2;
+  localization_config.max_position_jump_m = 0.4;
+  localization_config.max_yaw_jump_rad = 0.25;
   rm_nav::config::SpawnConfig spawn_config;
   spawn_config.x_m = 2.5;
   spawn_config.y_m = 2.2;
@@ -87,6 +94,7 @@ int main() {
   const auto second_stamp = first_stamp + std::chrono::milliseconds(150);
   auto second_frame = MakeFrame(map, second_stamp, kTrueX, kTrueY, kTrueYaw);
   second_frame.lidar.frame_index = 8U;
+  second_frame.lidar.points.resize(4U);
 
   odom.stamp = second_stamp;
   odom.x_m = 3.80F;
@@ -96,8 +104,24 @@ int main() {
 
   rm_nav::localization::LocalizationResult second_result;
   assert(localization.Process(second_frame, &second_result).ok());
-  assert(second_result.status.iterations > 0);
+  assert(second_result.status.consecutive_failures > 0U);
   assert(!second_result.status.pose_trusted);
+
+  const auto third_stamp = second_stamp + std::chrono::milliseconds(150);
+  auto third_frame = MakeFrame(map, third_stamp, kTrueX, kTrueY, kTrueYaw);
+  third_frame.lidar.frame_index = 9U;
+  odom.stamp = third_stamp;
+  odom.x_m = 3.80F;
+  odom.y_m = 3.35F;
+  odom.yaw_rad = 0.62F;
+  localization.SetLatestOdom(odom);
+
+  rm_nav::localization::LocalizationResult third_result;
+  assert(localization.Process(third_frame, &third_result).ok());
+  assert(third_result.relocalization.active);
+  assert(third_result.relocalization.attempted);
+  assert(third_result.relocalization.succeeded);
+  assert(third_result.status.pose_trusted);
 
   std::cout << "test_localization_recovery passed\n";
   return 0;

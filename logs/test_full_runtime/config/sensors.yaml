@@ -1,0 +1,23 @@
+lidar:
+  enabled: true
+  source: synthetic
+  model: L1
+  port: /dev/null
+  mount:
+    x_m: 0.20
+    y_m: 0.00
+    z_m: 0.00
+    roll_rad: 0.00
+    pitch_rad: 0.00
+    yaw_rad: 0.00
+imu:
+  enabled: true
+  source: synthetic
+  model: GenericIMU
+  mount:
+    x_m: -0.10
+    y_m: 0.00
+    z_m: 0.00
+    roll_rad: 0.00
+    pitch_rad: 0.00
+    yaw_rad: 0.00

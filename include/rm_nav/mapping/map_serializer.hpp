@@ -15,6 +15,7 @@ struct MapArtifactPaths {
   std::string occupancy_bin_path{};
   std::string occupancy_png_path{};
   std::string map_meta_path{};
+  std::string validation_report_path{};
 };
 
 class MapSerializer {

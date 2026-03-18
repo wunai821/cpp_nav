@@ -145,7 +145,12 @@ int main() {
                 "  occupancy_resolution_m: 0.1\n"
                 "  occupancy_padding_m: 1.0\n"
                 "  synthetic_scan_radius_m: 8.0\n"
-                "  synthetic_points_per_frame: 240\n");
+                "  synthetic_points_per_frame: 240\n"
+                "  validation_min_global_points: 100\n"
+                "  validation_min_occupied_cells: 10\n"
+                "  validation_min_width: 8\n"
+                "  validation_min_height: 8\n"
+                "  validation_min_occupied_ratio: 0.0005\n");
 
   rm_nav::app::Runtime runtime;
   assert(runtime.Initialize(config_dir.string()).ok());
@@ -156,6 +161,7 @@ int main() {
   assert(std::filesystem::exists(output_dir / "occupancy.bin"));
   assert(std::filesystem::exists(output_dir / "occupancy.png"));
   assert(std::filesystem::exists(output_dir / "map_meta.json"));
+  assert(std::filesystem::exists(output_dir / "map_validation_report.json"));
   assert(std::filesystem::exists(debug_dir / "fsm_status.json"));
   assert(std::filesystem::exists(debug_dir / "fsm_event.json"));
 

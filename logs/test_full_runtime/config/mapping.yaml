@@ -1,0 +1,5 @@
+mapping:
+  enabled: false
+  loop_hz: 8
+  output_dir: logs/test_full_runtime/output
+  waypoint_path: warmup_waypoints.txt

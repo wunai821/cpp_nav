@@ -51,21 +51,13 @@ GoalState GoalManager::BuildState(const data::Pose3f& current_pose,
   state.distance_to_target_m = std::sqrt(dx * dx + dy * dy);
   state.distance_to_center_m = state.distance_to_target_m;
   state.yaw_error_rad = NormalizeAngle(state.target_pose.rpy.z - current_pose.rpy.z);
-
-  if (hold_active_) {
-    if (state.distance_to_center_m > static_cast<float>(config_.recenter_threshold_m)) {
-      hold_active_ = false;
-    }
-  } else if (state.distance_to_center_m <= static_cast<float>(config_.center_radius_m)) {
-    hold_active_ = true;
-  }
-
-  state.mode = hold_active_ ? GoalMode::kCenterHold : GoalMode::kApproachCenter;
-  state.reached = hold_active_ &&
-                  state.distance_to_center_m <=
-                      static_cast<float>(config_.center_radius_m * 0.5) &&
-                  std::fabs(state.yaw_error_rad) <=
-                      static_cast<float>(config_.yaw_align_tolerance_rad);
+  state.within_center_radius =
+      state.distance_to_center_m <= static_cast<float>(config_.center_radius_m);
+  state.yaw_aligned =
+      std::fabs(state.yaw_error_rad) <=
+      static_cast<float>(config_.yaw_align_tolerance_rad);
+  state.mode = GoalMode::kApproachCenter;
+  state.reached = false;
   return state;
 }
 

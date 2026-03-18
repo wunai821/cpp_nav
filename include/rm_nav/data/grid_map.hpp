@@ -15,6 +15,7 @@ struct GridMap2D {
   std::uint32_t height{0};
   Pose3f origin{};
   std::vector<std::uint8_t> occupancy{};
+  std::vector<float> occupancy_log_odds{};
 };
 
 }  // namespace rm_nav::data

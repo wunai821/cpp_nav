@@ -21,7 +21,8 @@ float NormalizeAngle(float angle) {
 LocalizationStatus PoseQualityEstimator::Evaluate(const data::Pose3f& previous_pose,
                                                   const ScanMatchResult& match,
                                                   std::uint32_t consecutive_failures,
-                                                  bool map_loaded) const {
+                                                  bool map_loaded,
+                                                  bool allow_large_jump) const {
   LocalizationStatus status;
   status.match_score = match.score;
   status.iterations = match.iterations;
@@ -40,8 +41,9 @@ LocalizationStatus PoseQualityEstimator::Evaluate(const data::Pose3f& previous_p
   status.pose_trusted =
       map_loaded && match.converged &&
       match.score >= static_cast<float>(config_.min_match_score) &&
-      status.pose_jump_m <= static_cast<float>(config_.max_position_jump_m) &&
-      status.yaw_jump_rad <= static_cast<float>(config_.max_yaw_jump_rad) &&
+      (allow_large_jump ||
+       (status.pose_jump_m <= static_cast<float>(config_.max_position_jump_m) &&
+        status.yaw_jump_rad <= static_cast<float>(config_.max_yaw_jump_rad))) &&
       consecutive_failures == 0U;
   return status;
 }

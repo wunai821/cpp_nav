@@ -376,6 +376,27 @@ common::Status ConfigLoader::LoadFromDirectory(
     result.localization.relocalization_failure_threshold =
         GetInt(merged_values, "localization.relocalization_failure_threshold",
                result.localization.relocalization_failure_threshold);
+    result.localization.relocalization_retry_interval_ms =
+        GetInt(merged_values, "localization.relocalization_retry_interval_ms",
+               result.localization.relocalization_retry_interval_ms);
+    result.localization.relocalization_submap_radius_m =
+        GetDouble(merged_values, "localization.relocalization_submap_radius_m",
+                  result.localization.relocalization_submap_radius_m);
+    result.localization.relocalization_submap_max_points =
+        GetInt(merged_values, "localization.relocalization_submap_max_points",
+               result.localization.relocalization_submap_max_points);
+    result.localization.relocalization_max_iterations =
+        GetInt(merged_values, "localization.relocalization_max_iterations",
+               result.localization.relocalization_max_iterations);
+    result.localization.relocalization_min_match_score =
+        GetDouble(merged_values, "localization.relocalization_min_match_score",
+                  result.localization.relocalization_min_match_score);
+    result.localization.relocalization_linear_search_step_m =
+        GetDouble(merged_values, "localization.relocalization_linear_search_step_m",
+                  result.localization.relocalization_linear_search_step_m);
+    result.localization.relocalization_yaw_search_step_rad =
+        GetDouble(merged_values, "localization.relocalization_yaw_search_step_rad",
+                  result.localization.relocalization_yaw_search_step_rad);
     result.localization.map_to_odom_guard_translation_m =
         GetDouble(merged_values, "localization.map_to_odom_guard_translation_m",
                   result.localization.map_to_odom_guard_translation_m);
@@ -389,6 +410,12 @@ common::Status ConfigLoader::LoadFromDirectory(
         GetInt(merged_values, "mapping.loop_hz", result.mapping.loop_hz);
     result.mapping.output_dir =
         GetString(merged_values, "mapping.output_dir", result.mapping.output_dir);
+    result.mapping.staging_dir =
+        GetString(merged_values, "mapping.staging_dir", result.mapping.staging_dir);
+    result.mapping.last_good_dir =
+        GetString(merged_values, "mapping.last_good_dir", result.mapping.last_good_dir);
+    result.mapping.failed_dir =
+        GetString(merged_values, "mapping.failed_dir", result.mapping.failed_dir);
     result.mapping.waypoint_path =
         GetString(merged_values, "mapping.waypoint_path", result.mapping.waypoint_path);
     result.mapping.route_speed_mps =
@@ -412,12 +439,150 @@ common::Status ConfigLoader::LoadFromDirectory(
     result.mapping.occupancy_padding_m =
         GetDouble(merged_values, "mapping.occupancy_padding_m",
                   result.mapping.occupancy_padding_m);
+    result.mapping.occupancy_hit_log_odds =
+        GetDouble(merged_values, "mapping.occupancy_hit_log_odds",
+                  result.mapping.occupancy_hit_log_odds);
+    result.mapping.occupancy_miss_log_odds =
+        GetDouble(merged_values, "mapping.occupancy_miss_log_odds",
+                  result.mapping.occupancy_miss_log_odds);
+    result.mapping.occupancy_min_log_odds =
+        GetDouble(merged_values, "mapping.occupancy_min_log_odds",
+                  result.mapping.occupancy_min_log_odds);
+    result.mapping.occupancy_max_log_odds =
+        GetDouble(merged_values, "mapping.occupancy_max_log_odds",
+                  result.mapping.occupancy_max_log_odds);
+    result.mapping.occupancy_free_threshold_log_odds =
+        GetDouble(merged_values, "mapping.occupancy_free_threshold_log_odds",
+                  result.mapping.occupancy_free_threshold_log_odds);
+    result.mapping.occupancy_occupied_threshold_log_odds =
+        GetDouble(merged_values, "mapping.occupancy_occupied_threshold_log_odds",
+                  result.mapping.occupancy_occupied_threshold_log_odds);
+    result.mapping.occupancy_inflation_radius_m =
+        GetDouble(merged_values, "mapping.occupancy_inflation_radius_m",
+                  result.mapping.occupancy_inflation_radius_m);
     result.mapping.synthetic_scan_radius_m =
         GetDouble(merged_values, "mapping.synthetic_scan_radius_m",
                   result.mapping.synthetic_scan_radius_m);
     result.mapping.synthetic_points_per_frame =
         GetInt(merged_values, "mapping.synthetic_points_per_frame",
                result.mapping.synthetic_points_per_frame);
+    result.mapping.dynamic_suppression_enabled =
+        GetBool(merged_values, "mapping.dynamic_suppression_enabled",
+                result.mapping.dynamic_suppression_enabled);
+    result.mapping.dynamic_near_field_radius_m =
+        GetDouble(merged_values, "mapping.dynamic_near_field_radius_m",
+                  result.mapping.dynamic_near_field_radius_m);
+    result.mapping.dynamic_consistency_frames =
+        GetInt(merged_values, "mapping.dynamic_consistency_frames",
+               result.mapping.dynamic_consistency_frames);
+    result.mapping.dynamic_pending_ttl_frames =
+        GetInt(merged_values, "mapping.dynamic_pending_ttl_frames",
+               result.mapping.dynamic_pending_ttl_frames);
+    result.mapping.dynamic_known_obstacle_mask_enabled =
+        GetBool(merged_values, "mapping.dynamic_known_obstacle_mask_enabled",
+                result.mapping.dynamic_known_obstacle_mask_enabled);
+    result.mapping.dynamic_known_obstacle_margin_m =
+        GetDouble(merged_values, "mapping.dynamic_known_obstacle_margin_m",
+                  result.mapping.dynamic_known_obstacle_margin_m);
+    result.mapping.dynamic_known_obstacle_min_confidence =
+        GetDouble(merged_values, "mapping.dynamic_known_obstacle_min_confidence",
+                  result.mapping.dynamic_known_obstacle_min_confidence);
+    result.mapping.pose_source =
+        GetString(merged_values, "mapping.pose_source", result.mapping.pose_source);
+    result.mapping.frontend_match_max_iterations =
+        GetInt(merged_values, "mapping.frontend_match_max_iterations",
+               result.mapping.frontend_match_max_iterations);
+    result.mapping.frontend_correspondence_distance_m =
+        GetDouble(merged_values, "mapping.frontend_correspondence_distance_m",
+                  result.mapping.frontend_correspondence_distance_m);
+    result.mapping.frontend_min_match_score =
+        GetDouble(merged_values, "mapping.frontend_min_match_score",
+                  result.mapping.frontend_min_match_score);
+    result.mapping.frontend_match_max_points =
+        GetInt(merged_values, "mapping.frontend_match_max_points",
+               result.mapping.frontend_match_max_points);
+    result.mapping.frontend_min_map_points =
+        GetInt(merged_values, "mapping.frontend_min_map_points",
+               result.mapping.frontend_min_map_points);
+    result.mapping.frontend_submap_radius_m =
+        GetDouble(merged_values, "mapping.frontend_submap_radius_m",
+                  result.mapping.frontend_submap_radius_m);
+    result.mapping.frontend_submap_max_points =
+        GetInt(merged_values, "mapping.frontend_submap_max_points",
+               result.mapping.frontend_submap_max_points);
+    result.mapping.keyframe_translation_threshold_m =
+        GetDouble(merged_values, "mapping.keyframe_translation_threshold_m",
+                  result.mapping.keyframe_translation_threshold_m);
+    result.mapping.keyframe_yaw_threshold_rad =
+        GetDouble(merged_values, "mapping.keyframe_yaw_threshold_rad",
+                  result.mapping.keyframe_yaw_threshold_rad);
+    result.mapping.max_keyframes =
+        GetInt(merged_values, "mapping.max_keyframes", result.mapping.max_keyframes);
+    result.mapping.keyframe_max_points =
+        GetInt(merged_values, "mapping.keyframe_max_points",
+               result.mapping.keyframe_max_points);
+    result.mapping.loop_candidate_distance_threshold_m =
+        GetDouble(merged_values, "mapping.loop_candidate_distance_threshold_m",
+                  result.mapping.loop_candidate_distance_threshold_m);
+    result.mapping.loop_candidate_min_time_separation_s =
+        GetDouble(merged_values, "mapping.loop_candidate_min_time_separation_s",
+                  result.mapping.loop_candidate_min_time_separation_s);
+    result.mapping.loop_candidate_max_yaw_delta_rad =
+        GetDouble(merged_values, "mapping.loop_candidate_max_yaw_delta_rad",
+                  result.mapping.loop_candidate_max_yaw_delta_rad);
+    result.mapping.loop_matcher =
+        GetString(merged_values, "mapping.loop_matcher", result.mapping.loop_matcher);
+    result.mapping.loop_match_max_iterations =
+        GetInt(merged_values, "mapping.loop_match_max_iterations",
+               result.mapping.loop_match_max_iterations);
+    result.mapping.loop_match_correspondence_distance_m =
+        GetDouble(merged_values, "mapping.loop_match_correspondence_distance_m",
+                  result.mapping.loop_match_correspondence_distance_m);
+    result.mapping.loop_match_min_score =
+        GetDouble(merged_values, "mapping.loop_match_min_score",
+                  result.mapping.loop_match_min_score);
+    result.mapping.loop_match_max_points =
+        GetInt(merged_values, "mapping.loop_match_max_points",
+               result.mapping.loop_match_max_points);
+    result.mapping.loop_correction_min_score =
+        GetDouble(merged_values, "mapping.loop_correction_min_score",
+                  result.mapping.loop_correction_min_score);
+    result.mapping.loop_correction_max_translation_m =
+        GetDouble(merged_values, "mapping.loop_correction_max_translation_m",
+                  result.mapping.loop_correction_max_translation_m);
+    result.mapping.loop_correction_max_yaw_rad =
+        GetDouble(merged_values, "mapping.loop_correction_max_yaw_rad",
+                  result.mapping.loop_correction_max_yaw_rad);
+    result.mapping.loop_correction_max_consecutive_failures =
+        GetInt(merged_values, "mapping.loop_correction_max_consecutive_failures",
+               result.mapping.loop_correction_max_consecutive_failures);
+    result.mapping.loop_correction_apply_translation_step_m =
+        GetDouble(merged_values, "mapping.loop_correction_apply_translation_step_m",
+                  result.mapping.loop_correction_apply_translation_step_m);
+    result.mapping.loop_correction_apply_yaw_step_rad =
+        GetDouble(merged_values, "mapping.loop_correction_apply_yaw_step_rad",
+                  result.mapping.loop_correction_apply_yaw_step_rad);
+    result.mapping.validation_min_global_points =
+        GetInt(merged_values, "mapping.validation_min_global_points",
+               result.mapping.validation_min_global_points);
+    result.mapping.validation_min_occupied_cells =
+        GetInt(merged_values, "mapping.validation_min_occupied_cells",
+               result.mapping.validation_min_occupied_cells);
+    result.mapping.validation_min_width =
+        GetInt(merged_values, "mapping.validation_min_width",
+               result.mapping.validation_min_width);
+    result.mapping.validation_min_height =
+        GetInt(merged_values, "mapping.validation_min_height",
+               result.mapping.validation_min_height);
+    result.mapping.validation_min_occupied_ratio =
+        GetDouble(merged_values, "mapping.validation_min_occupied_ratio",
+                  result.mapping.validation_min_occupied_ratio);
+    result.mapping.validation_max_loop_translation_regression_m =
+        GetDouble(merged_values, "mapping.validation_max_loop_translation_regression_m",
+                  result.mapping.validation_max_loop_translation_regression_m);
+    result.mapping.validation_max_loop_yaw_regression_rad =
+        GetDouble(merged_values, "mapping.validation_max_loop_yaw_regression_rad",
+                  result.mapping.validation_max_loop_yaw_regression_rad);
 
     result.planner.loop_hz =
         GetInt(merged_values, "planner.loop_hz", result.planner.loop_hz);
@@ -439,6 +604,12 @@ common::Status ConfigLoader::LoadFromDirectory(
     result.planner.yaw_align_tolerance_rad =
         GetDouble(merged_values, "planner.yaw_align_tolerance_rad",
                   result.planner.yaw_align_tolerance_rad);
+    result.planner.center_hold_settle_frames =
+        GetInt(merged_values, "planner.center_hold_settle_frames",
+               result.planner.center_hold_settle_frames);
+    result.planner.center_hold_settle_time_ms =
+        GetInt(merged_values, "planner.center_hold_settle_time_ms",
+               result.planner.center_hold_settle_time_ms);
     result.planner.recenter_threshold_m =
         GetDouble(merged_values, "planner.recenter_threshold_m",
                   result.planner.recenter_threshold_m);
@@ -506,6 +677,36 @@ common::Status ConfigLoader::LoadFromDirectory(
     result.safety.collision_check_dt_s =
         GetDouble(merged_values, "safety.collision_check_dt_s",
                   result.safety.collision_check_dt_s);
+    result.safety.hold_timeout_ms =
+        GetInt(merged_values, "safety.hold_timeout_ms",
+               result.safety.hold_timeout_ms);
+    result.safety.planner_fail_timeout_ms =
+        GetInt(merged_values, "safety.planner_fail_timeout_ms",
+               result.safety.planner_fail_timeout_ms);
+    result.safety.localization_fail_timeout_ms =
+        GetInt(merged_values, "safety.localization_fail_timeout_ms",
+               result.safety.localization_fail_timeout_ms);
+    result.safety.mission_timeout_ms =
+        GetInt(merged_values, "safety.mission_timeout_ms",
+               result.safety.mission_timeout_ms);
+    result.safety.footprint_half_length_m =
+        GetDouble(merged_values, "safety.footprint_half_length_m",
+                  result.safety.footprint_half_length_m);
+    result.safety.footprint_half_width_m =
+        GetDouble(merged_values, "safety.footprint_half_width_m",
+                  result.safety.footprint_half_width_m);
+    result.safety.max_vx_mps =
+        GetDouble(merged_values, "safety.max_vx_mps", result.safety.max_vx_mps);
+    result.safety.max_vy_mps =
+        GetDouble(merged_values, "safety.max_vy_mps", result.safety.max_vy_mps);
+    result.safety.max_wz_radps =
+        GetDouble(merged_values, "safety.max_wz_radps", result.safety.max_wz_radps);
+    result.safety.max_delta_v_per_tick =
+        GetDouble(merged_values, "safety.max_delta_v_per_tick",
+                  result.safety.max_delta_v_per_tick);
+    result.safety.max_delta_w_per_tick =
+        GetDouble(merged_values, "safety.max_delta_w_per_tick",
+                  result.safety.max_delta_w_per_tick);
     result.safety.recovery_speed_scale =
         GetDouble(merged_values, "safety.recovery_speed_scale",
                   result.safety.recovery_speed_scale);

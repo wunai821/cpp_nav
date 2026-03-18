@@ -27,6 +27,7 @@
 #include "rm_nav/perception/mot_manager.hpp"
 #include "rm_nav/perception/preprocess_pipeline.hpp"
 #include "rm_nav/planning/planner_coordinator.hpp"
+#include "rm_nav/safety/safety_manager.hpp"
 #include "rm_nav/sync/sensor_sync_buffer.hpp"
 #include "rm_nav/tf/tf_tree_lite.hpp"
 
@@ -34,6 +35,13 @@ namespace rm_nav::app {
 
 class Runtime {
  public:
+  enum class MappingSaveFailureTag {
+    kNone = 0,
+    kWriteFailed,
+    kValidationFailed,
+    kStorageSwitchFailed,
+  };
+
   Runtime();
   ~Runtime();
 
@@ -70,8 +78,8 @@ class Runtime {
       const config::SpawnConfig& spawn_config);
   common::Status InitializeCombatPipelineFromSavedMap();
   fsm::NavFsmContext BuildFsmContext(bool referee_changed) const;
-  data::ChassisCmd SelectSafeCmd(const fsm::NavFsmSnapshot& snapshot,
-                                 common::TimePoint stamp) const;
+  data::ChassisCmd SelectCommandCandidate(const fsm::NavFsmSnapshot& snapshot,
+                                          common::TimePoint stamp) const;
   std::string RuntimeDebugOutputDir() const;
   bool CloneSyncedFrame(const data::SyncedFrame& source,
                         sync::SyncedFrameHandle* handle);
@@ -101,6 +109,7 @@ class Runtime {
   perception::LocalCostmapBuilder local_costmap_builder_{};
   perception::MotManager mot_manager_{};
   planning::PlannerCoordinator planner_{};
+  safety::SafetyManager safety_manager_{};
   debug::FoxgloveServer foxglove_server_{};
   common::SpscRingQueue<sync::SyncedFrameHandle, 16> mapping_queue_{};
 
@@ -140,7 +149,9 @@ class Runtime {
   std::atomic<common::TimeNs> last_stm32_rx_ns_{0};
   std::atomic_bool mapping_save_requested_{false};
   std::atomic_bool map_saved_{false};
+  std::atomic<int> mapping_save_failure_tag_{static_cast<int>(MappingSaveFailureTag::kNone)};
   std::atomic_bool combat_pipeline_ready_{false};
+  std::atomic_bool combat_map_unavailable_{false};
   bool mapping_mode_{false};
   bool initialized_{false};
 };

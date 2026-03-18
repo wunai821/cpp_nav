@@ -26,7 +26,8 @@ class PoseQualityEstimator {
   LocalizationStatus Evaluate(const data::Pose3f& previous_pose,
                               const ScanMatchResult& match,
                               std::uint32_t consecutive_failures,
-                              bool map_loaded) const;
+                              bool map_loaded,
+                              bool allow_large_jump) const;
 
  private:
   config::LocalizationConfig config_{};

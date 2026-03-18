@@ -1,7 +1,9 @@
 #include <cassert>
 #include <cmath>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <iterator>
 #include <vector>
 
 #include "rm_nav/common/time.hpp"
@@ -56,14 +58,29 @@ rm_nav::data::SyncedFrame MakeFrame(const std::vector<rm_nav::data::PointXYZI>& 
 
 int main() {
   const std::filesystem::path output_dir("logs/test_mapping_pipeline_output");
+  const auto staging_dir = output_dir.parent_path() / "test_mapping_pipeline_staging";
+  const auto last_good_dir = output_dir.parent_path() / "test_mapping_pipeline_last_good";
+  const auto failed_dir = output_dir.parent_path() / "test_mapping_pipeline_failed";
+  std::filesystem::remove_all(output_dir);
+  std::filesystem::remove_all(staging_dir);
+  std::filesystem::remove_all(last_good_dir);
+  std::filesystem::remove_all(failed_dir);
   std::filesystem::create_directories(output_dir);
 
   rm_nav::config::MappingConfig config;
   config.output_dir = output_dir.string();
+  config.staging_dir = staging_dir.string();
+  config.last_good_dir = last_good_dir.string();
+  config.failed_dir = failed_dir.string();
   config.voxel_size_m = 0.1;
   config.z_min_m = 0.2;
   config.z_max_m = 1.2;
   config.occupancy_resolution_m = 0.1;
+  config.validation_min_global_points = 5;
+  config.validation_min_occupied_cells = 3;
+  config.validation_min_width = 2;
+  config.validation_min_height = 2;
+  config.validation_min_occupied_ratio = 0.0001;
 
   rm_nav::mapping::MappingEngine engine;
   assert(engine.Initialize(config).ok());
@@ -79,6 +96,8 @@ int main() {
   assert(engine.Update(MakeFrame(world_points, pose0, 0U), pose0).ok());
   assert(engine.Update(MakeFrame(world_points, pose1, 1U), pose1).ok());
   assert(engine.Update(MakeFrame(world_points, pose2, 2U), pose2).ok());
+  assert(!engine.Keyframes().empty());
+  assert(engine.Keyframes().front().map_to_base.is_valid);
 
   rm_nav::localization::StaticMap saved_map;
   assert(engine.SaveMap(output_dir.string(), &saved_map).ok());
@@ -90,6 +109,22 @@ int main() {
   assert(std::filesystem::exists(output_dir / "occupancy.bin"));
   assert(std::filesystem::exists(output_dir / "occupancy.png"));
   assert(std::filesystem::exists(output_dir / "map_meta.json"));
+  assert(std::filesystem::exists(output_dir / "map_validation_report.json"));
+  {
+    std::ifstream report_input(output_dir / "map_validation_report.json");
+    const std::string report_text((std::istreambuf_iterator<char>(report_input)),
+                                  std::istreambuf_iterator<char>());
+    assert(report_text.find("\"trajectory_sample_count\"") != std::string::npos);
+    assert(report_text.find("\"loop_consistency_sample_count\"") != std::string::npos);
+    assert(report_text.find("\"trajectory_consistency_passed\"") != std::string::npos);
+  }
+
+  const auto pose3 = MakePose(0.6F, 0.3F, 0.10F);
+  assert(engine.Update(MakeFrame(world_points, pose3, 3U), pose3).ok());
+  assert(engine.SaveMap(output_dir.string(), &saved_map).ok());
+  assert(std::filesystem::exists(last_good_dir / "global_map.pcd"));
+  assert(std::filesystem::exists(last_good_dir / "map_validation_report.json"));
+  assert(!std::filesystem::exists(failed_dir / "global_map.pcd"));
 
   rm_nav::localization::MapLoader loader;
   rm_nav::config::LocalizationConfig localization_config;

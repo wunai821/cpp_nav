@@ -69,6 +69,10 @@ common::Status LocalizationEngine::Initialize(
       return status;
     }
   }
+  status = relocalization_manager_.Configure(localization_config);
+  if (!status.ok()) {
+    return status;
+  }
 
   const auto now = common::Now();
   const data::Pose3f initial_map_to_base = initial_pose_provider_.MakeInitialPose(now);
@@ -178,18 +182,37 @@ common::Status LocalizationEngine::Process(const data::SyncedFrame& frame,
       !relocalization_mode &&
       last_matcher_latency_ns_ >
       static_cast<common::TimeNs>(config_.slow_match_threshold_ms) * 1000000LL;
-  result->light_match_mode = light_match_mode;
+  result->light_match_mode = !relocalization_mode && light_match_mode;
   if (config_.enabled && static_map_.global_map_loaded && matcher_ != nullptr) {
-    auto status = ConfigureMatcherForLoad(light_match_mode);
-    if (!status.ok()) {
-      return status;
+    if (relocalization_mode) {
+      const auto coarse_fallback_guess = initial_pose_provider_.MakeInitialPose(frame.stamp);
+      auto status = relocalization_manager_.Attempt(static_map_, frame.lidar, predicted_map_to_base,
+                                                    coarse_fallback_guess, frame.stamp, &match,
+                                                    &result->relocalization);
+      if (!status.ok()) {
+        return status;
+      }
+      result->matcher_latency_ns = result->relocalization.attempt_latency_ns;
+      last_matcher_latency_ns_ = result->matcher_latency_ns;
+      if (result->relocalization.attempted && result->relocalization.succeeded) {
+        match_status = common::Status::Ok();
+      } else if (result->relocalization.attempted) {
+        match_status = common::Status::Unavailable("coarse relocalization did not converge");
+      } else {
+        match_status = common::Status::NotReady("relocalization cooldown");
+      }
+    } else {
+      auto status = ConfigureMatcherForLoad(light_match_mode);
+      if (!status.ok()) {
+        return status;
+      }
+      const auto matcher_begin_ns = common::NowNs();
+      const auto scan = light_match_mode ? DownsampleScan(frame.lidar, config_.reduced_scan_stride)
+                                         : frame.lidar;
+      match_status = matcher_->Match(static_map_, scan, predicted_map_to_base, &match);
+      result->matcher_latency_ns = common::NowNs() - matcher_begin_ns;
+      last_matcher_latency_ns_ = result->matcher_latency_ns;
     }
-    const auto matcher_begin_ns = common::NowNs();
-    const auto scan = light_match_mode ? DownsampleScan(frame.lidar, config_.reduced_scan_stride)
-                                       : frame.lidar;
-    match_status = matcher_->Match(static_map_, scan, predicted_map_to_base, &match);
-    result->matcher_latency_ns = common::NowNs() - matcher_begin_ns;
-    last_matcher_latency_ns_ = result->matcher_latency_ns;
   }
 
   if (match_status.ok() && match.converged) {
@@ -222,8 +245,11 @@ common::Status LocalizationEngine::Process(const data::SyncedFrame& frame,
       relocalization_mode ? predicted_map_to_base : previous.map_to_base;
   result->status = quality_estimator_.Evaluate(quality_reference_pose, match,
                                                consecutive_failures_,
-                                               static_map_.global_map_loaded);
+                                               static_map_.global_map_loaded,
+                                               relocalization_mode &&
+                                                   result->relocalization.succeeded);
   if (previous.map_to_odom.is_valid &&
+      !(relocalization_mode && result->relocalization.succeeded) &&
       !IsMapToOdomUpdateStable(previous.map_to_odom, result->map_to_odom)) {
     result->map_to_odom = previous.map_to_odom;
     result->map_to_odom.stamp = frame.stamp;

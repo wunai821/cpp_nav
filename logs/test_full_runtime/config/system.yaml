@@ -1,0 +1,13 @@
+app_name: rm_nav_main
+version: 0.1.0
+log_level: INFO
+auto_shutdown_ms: 1200
+manual_mode_selector: 1
+threads:
+  driver_cpu: -1
+  sync_cpu: -1
+  pose_core_cpu: -1
+  perception_cpu: -1
+  planner_cpu: -1
+  safety_fsm_cpu: -1
+  debug_cpu: -1

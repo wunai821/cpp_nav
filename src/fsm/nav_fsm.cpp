@@ -44,6 +44,14 @@ const char* ToString(NavEventCode code) {
       return "MAP_LOAD_SUCCESS";
     case NavEventCode::kMapSaveSuccess:
       return "MAP_SAVE_SUCCESS";
+    case NavEventCode::kMapSaveWriteFailed:
+      return "MAP_SAVE_WRITE_FAILED";
+    case NavEventCode::kMapValidationFailed:
+      return "MAP_VALIDATION_FAILED";
+    case NavEventCode::kMapStorageSwitchFailed:
+      return "MAP_STORAGE_SWITCH_FAILED";
+    case NavEventCode::kMapUnavailable:
+      return "MAP_UNAVAILABLE";
     case NavEventCode::kLocalizationDegraded:
       return "LOCALIZATION_DEGRADED";
     case NavEventCode::kPlannerFailed:
@@ -114,7 +122,10 @@ NavFsmSnapshot NavFsm::Update(common::TimePoint stamp, const NavFsmContext& cont
       Transition(stamp, NavState::kIdle, NavEventCode::kSelfCheckPassed, "self check passed");
       break;
     case NavState::kIdle:
-      if (context.mapping_enabled) {
+      if (context.combat_requested && context.map_unavailable) {
+        Transition(stamp, NavState::kFailsafe, NavEventCode::kMapUnavailable,
+                   "no usable map available");
+      } else if (context.mapping_enabled) {
         Transition(stamp, NavState::kModeWarmup, NavEventCode::kEnterWarmupMode,
                    "enter warmup mode");
       } else if (context.combat_ready && context.map_loaded) {
@@ -128,7 +139,22 @@ NavFsmSnapshot NavFsm::Update(common::TimePoint stamp, const NavFsmContext& cont
       }
       break;
     case NavState::kModeSave:
-      if (context.map_saved) {
+      if (context.map_save_write_failed) {
+        snapshot_.last_event =
+            MakeEvent(stamp, NavEventCode::kMapSaveWriteFailed, "map save write failed");
+      } else if (context.map_save_validation_failed) {
+        snapshot_.last_event =
+            MakeEvent(stamp, NavEventCode::kMapValidationFailed, "map validation failed");
+      } else if (context.map_save_storage_failed) {
+        snapshot_.last_event = MakeEvent(stamp, NavEventCode::kMapStorageSwitchFailed,
+                                         "map storage switch failed");
+      } else if (context.combat_ready && context.map_loaded) {
+        Transition(stamp, NavState::kModeCombat, NavEventCode::kMapLoadSuccess,
+                   "fallback map load success");
+      } else if (context.map_unavailable) {
+        Transition(stamp, NavState::kIdle, NavEventCode::kMapUnavailable,
+                   "no usable map available");
+      } else if (context.map_saved) {
         Transition(stamp,
                    (context.combat_ready && context.map_loaded) ? NavState::kModeCombat
                                                                 : NavState::kIdle,
@@ -183,7 +209,7 @@ NavFsmSnapshot NavFsm::Update(common::TimePoint stamp, const NavFsmContext& cont
       }
       break;
     case NavState::kFailsafe:
-      if (context.heartbeat_ok && !context.safety_triggered) {
+      if (context.heartbeat_ok && !context.safety_triggered && !context.map_unavailable) {
         Transition(stamp,
                    context.mapping_enabled ? NavState::kModeWarmup
                                            : (context.combat_ready && context.map_loaded

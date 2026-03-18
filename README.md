@@ -1,12 +1,32 @@
 # rm_sentinel_nav
 
-面向哨兵赛场的导航工程，当前主线已经具备：
+面向哨兵赛场的导航工程。当前不要把“已有主链”理解成所有分层模块都已经完整落地，按模块状态看：
 
-- 真雷达或 mock 数据输入
-- `Sync -> Localization/Mapping -> Preprocess -> Costmap/MOT -> Planner -> Safety -> STM32` 主链
-- 热身建图与正赛定位两套模式
-- mock / replay / warmup mapping / runtime bring-up 工具
-- Foxglove 最小 WebSocket 调试旁路
+- `L1/IMU`：已实现
+- `Sync`：已实现
+- `Localization`：已实现
+- `Mapping`：已实现
+- `Preprocess`：部分实现
+  当前由集成式预处理链路承担，`src/perception/ground_filter.cpp` 和 `src/perception/voxel_filter.cpp` 仍是空文件。
+- `Costmap/MOT`：部分实现
+  当前已有 `LocalCostmapBuilder + MotManager` 主线，但 `src/perception/obstacle_layer.cpp`、`src/perception/inflation_layer.cpp`、`src/perception/dynamic_layer.cpp`、`src/perception/tracker_kf.cpp` 仍是空文件。
+- `局部感知层`：部分实现
+  当前主线依赖 `Preprocess + LocalCostmapBuilder + MotManager`，但完整分层感知链还没真正落地。
+- `Planner`：部分实现
+  当前已有 `GlobalAStar + OmniDwa + GoalManager` 主线，但 `src/planning/recovery_planner.cpp` 和 `src/planning/mission_manager.cpp` 仍是空文件。
+- `恢复策略`：部分实现
+  当前 FSM 有 `RECOVERY` 状态和运行时降速兜底，但独立 `RecoveryPlanner` 仍未真正落地。
+- `Safety`：部分实现
+  当前 runtime 里有内联安全 gate 和 failsafe 逻辑，但 `src/safety/*.cpp` 仍是空文件，独立安全层还没真正落地。
+- `STM32 / runtime bring-up`：部分实现
+  当前串口桥和一部分运行时联调已接入，但还不应视为完整实机闭环。
+- `真正重定位`：部分实现
+  当前 localization 有失败后的预测/降级路径，但 `src/localization/relocalization_manager.cpp` 仍是空文件。
+- `LIO 前端 / ESKF-LIO`：roadmap
+  `src/mapping/lio_frontend.cpp` 和 `src/mapping/eskf_lio.cpp` 仍是空文件。
+- 热身建图与正赛定位两套模式：已实现
+- mock / replay / warmup mapping / runtime bring-up 工具：已实现
+- Foxglove 最小 WebSocket 调试旁路：已实现
 
 核心坐标系固定为：
 
@@ -86,6 +106,17 @@ cmake --build build
 - `config/mot.yaml`
 
 这些文件保留在仓库里，是为了稳定目录结构和后续扩展接口，不代表当前主链已经完全按这些配置文件驱动。
+
+当前 `mapping` 也要明确一个边界：
+
+- 已经具备热身建图闭环和地图导出/回读能力
+- 但更稳的比赛级建图能力仍在补强中
+
+这块后续工程拆分见 [mapping_hardening.md](docs/mapping_hardening.md)。
+
+如果接下来要优先强化“热身只有一次机会”的建图过程，直接看：
+
+- [mapping_hardening.md](docs/mapping_hardening.md) 里的 `第 8.6 阶段：建图稳态与轻量回环`
 
 ## 常用运行方式
 
@@ -185,6 +216,11 @@ cmake --build build
 - `occupancy.bin`
 - `occupancy.png`
 - `map_meta.json`
+- `map_validation_report.json`
+  - 不只包含点数、占据栅格数、占据比例这些几何质检
+  - 也包含保存前轨迹一致性检查，会直接比较 `raw external pose` 和
+    `optimized pose` 在回访区域里的平移/yaw 误差均值，帮助判断轻量回环
+    纠偏后轨迹是否更一致
 - `summary.txt`
 
 地图格式见 [map_format.md](docs/map_format.md)。
@@ -209,7 +245,7 @@ mapping:
 - `MODE_WARMUP`
 - 固定 waypoint 巡航
 - `MODE_SAVE`
-- 导出建图结果
+- 先写 `staging`、做地图质检，再切换 `active / last_good`
 
 ### 5. 跑真雷达 bring-up
 
@@ -281,6 +317,7 @@ sudo ./rm_nav_main --config config/
 - `occupancy.bin`
 - `occupancy.png`
 - `map_meta.json`
+- `map_validation_report.json`
 
 ### mock / replay / bring-up
 
@@ -317,5 +354,6 @@ runtime 最常用 topic 见 [debug_channels.md](docs/debug_channels.md)。
 - [comm_protocol.md](docs/comm_protocol.md)
 - [state_machine.md](docs/state_machine.md)
 - [map_format.md](docs/map_format.md)
+- [mapping_hardening.md](docs/mapping_hardening.md)
 - [debug_channels.md](docs/debug_channels.md)
 - [performance_budget.md](docs/performance_budget.md)

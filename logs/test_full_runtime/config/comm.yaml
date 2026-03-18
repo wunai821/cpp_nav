@@ -1,0 +1,4 @@
+stm32:
+  enabled: false
+  port: /dev/null
+  baud_rate: 115200

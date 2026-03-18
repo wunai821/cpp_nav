@@ -1,17 +1,26 @@
 # 地图格式说明
 
-本文档描述热身建图导出的 4 个核心产物，以及正赛定位如何回读它们。实现位置在 [map_serializer.cpp](../src/mapping/map_serializer.cpp) 和 [map_loader.cpp](../src/localization/map_loader.cpp)。
+本文档描述热身建图导出的 5 个核心产物，以及正赛定位如何回读它们。实现位置在 [map_serializer.cpp](../src/mapping/map_serializer.cpp)、[map_save_manager.cpp](../src/mapping/map_save_manager.cpp) 和 [map_loader.cpp](../src/localization/map_loader.cpp)。
 
 ## 导出目录
 
 默认由 [mapping.yaml](../config/mapping.yaml) 的 `mapping.output_dir` 控制。
 
-每次成功导图后，目录内至少包含：
+每次成功导图后，`active` 目录内至少包含：
 
 - `global_map.pcd`
 - `occupancy.bin`
 - `occupancy.png`
 - `map_meta.json`
+- `map_validation_report.json`
+
+当前保存流程不是直接覆盖写 `active`，而是：
+
+1. 先把新图写到 `staging`
+2. 对新图生成 `map_validation_report.json`
+3. 校验通过后，把旧 `active` 旋转到 `last_good`
+4. 再把 `staging` 切到 `active`
+5. 如果校验失败，则把 `staging` 旋转到 `failed`
 
 ## `global_map.pcd`
 
@@ -75,6 +84,53 @@
 - `resolution_m`
 - `origin_x_m`
 - `origin_y_m`
+
+## `map_validation_report.json`
+
+用途：
+
+- 建图完成后的最小质量检查报告
+- 决定新图是否允许切换为当前 `active`
+
+当前字段：
+
+- `passed`
+- `trajectory_consistency_passed`
+- `global_point_count`
+- `occupied_cell_count`
+- `trajectory_sample_count`
+- `loop_consistency_sample_count`
+- `occupied_ratio`
+- `raw_loop_translation_error_mean_m`
+- `optimized_loop_translation_error_mean_m`
+- `raw_loop_yaw_error_mean_rad`
+- `optimized_loop_yaw_error_mean_rad`
+- `loop_translation_gain_m`
+- `loop_yaw_gain_rad`
+- `width`
+- `height`
+- `resolution_m`
+- `summary`
+
+与轻量回环/纠偏最相关的字段：
+
+- `trajectory_consistency_passed`
+  - 轨迹一致性质检是否通过
+- `raw_loop_translation_error_mean_m`
+  - 回访区域里，raw external pose 相对局部匹配目标位姿的平均平移误差
+- `optimized_loop_translation_error_mean_m`
+  - 回访区域里，optimized pose 相对局部匹配目标位姿的平均平移误差
+- `raw_loop_yaw_error_mean_rad`
+  - 回访区域里，raw external pose 的平均 yaw 误差
+- `optimized_loop_yaw_error_mean_rad`
+  - 回访区域里，optimized pose 的平均 yaw 误差
+- `loop_translation_gain_m`
+  - 平移一致性增益，`raw - optimized`，越大越好
+- `loop_yaw_gain_rad`
+  - yaw 一致性增益，`raw - optimized`，越大越好
+
+如果 `loop_consistency_sample_count == 0`，说明这次建图没有形成足够的回访一致性评估样本；
+报告仍然有效，但这些轨迹一致性字段更应理解为“未评价”，而不是“前端一定异常”。
 
 ## 2D 占据图的语义
 

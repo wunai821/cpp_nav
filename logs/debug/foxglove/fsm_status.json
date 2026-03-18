@@ -1,8 +1,8 @@
 {
   "state": "MODE_SAVE",
   "previous_state": "MODE_WARMUP",
-  "last_event_code": "NONE",
-  "last_event_summary": "save requested",
+  "last_event_code": "MAP_VALIDATION_FAILED",
+  "last_event_summary": "map validation failed",
   "mapping_active": false,
   "waypoint_active": false,
   "localization_active": false,

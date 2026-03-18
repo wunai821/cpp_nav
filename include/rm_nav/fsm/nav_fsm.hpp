@@ -10,6 +10,11 @@ struct NavFsmContext {
   bool save_requested{false};
   bool map_loaded{false};
   bool map_saved{false};
+  bool map_save_write_failed{false};
+  bool map_save_validation_failed{false};
+  bool map_save_storage_failed{false};
+  bool combat_requested{false};
+  bool map_unavailable{false};
   bool combat_ready{false};
   bool localization_degraded{false};
   bool planner_failed{false};

@@ -10,6 +10,8 @@ struct PlannerConfig {
   double center_goal_y_m{3.0};
   double center_radius_m{0.6};
   double yaw_align_tolerance_rad{0.12};
+  int center_hold_settle_frames{5};
+  int center_hold_settle_time_ms{500};
   double recenter_threshold_m{0.9};
   double max_vx_mps{1.0};
   double max_vy_mps{0.8};
