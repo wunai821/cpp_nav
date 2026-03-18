@@ -19,6 +19,9 @@ struct LocalizationConfig {
   int slow_match_threshold_ms{12};
   int reduced_max_iterations{4};
   int reduced_scan_stride{2};
+  int relocalization_failure_threshold{4};
+  double map_to_odom_guard_translation_m{0.8};
+  double map_to_odom_guard_yaw_rad{0.45};
 };
 
 }  // namespace rm_nav::config

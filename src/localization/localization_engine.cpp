@@ -42,6 +42,7 @@ common::Status LocalizationEngine::Initialize(
   dropped_frames_ = 0;
   consecutive_failures_ = 0;
   has_latest_odom_ = false;
+  has_trusted_map_to_odom_ = false;
   static_map_ = {};
 
   ScanMatchConfig matcher_config;
@@ -89,6 +90,8 @@ common::Status LocalizationEngine::Initialize(
   map_to_odom_.Publish(initial_map_to_odom);
   odom_to_base_.Publish(initial_odom_to_base);
   latest_aligned_scan_.Publish({});
+  last_trusted_map_to_odom_ = initial_map_to_odom;
+  has_trusted_map_to_odom_ = true;
 
   if (tf_tree_ != nullptr) {
     tf_tree_->PushMapToOdom(initial_map_to_odom);
@@ -162,11 +165,17 @@ common::Status LocalizationEngine::Process(const data::SyncedFrame& frame,
   const data::Pose3f odom_to_base =
       has_latest_odom_ ? OdomToBaseFromState(latest_odom_.ReadSnapshot())
                        : previous.odom_to_base;
-  const data::Pose3f predicted_map_to_base = PredictedMapToBase(frame.stamp, odom_to_base);
+  const bool relocalization_mode =
+      consecutive_failures_ >=
+      static_cast<std::uint32_t>(std::max(1, config_.relocalization_failure_threshold));
+  const data::Pose3f predicted_map_to_base =
+      relocalization_mode ? RelocalizationPrediction(frame.stamp, odom_to_base)
+                          : PredictedMapToBase(frame.stamp, odom_to_base);
 
   ScanMatchResult match;
   common::Status match_status = common::Status::NotReady("scan matcher not configured");
   const bool light_match_mode =
+      !relocalization_mode &&
       last_matcher_latency_ns_ >
       static_cast<common::TimeNs>(config_.slow_match_threshold_ms) * 1000000LL;
   result->light_match_mode = light_match_mode;
@@ -209,9 +218,24 @@ common::Status LocalizationEngine::Process(const data::SyncedFrame& frame,
   }
   result->map_to_odom.stamp = frame.stamp;
 
-  result->status = quality_estimator_.Evaluate(previous.map_to_base, match,
+  const data::Pose3f quality_reference_pose =
+      relocalization_mode ? predicted_map_to_base : previous.map_to_base;
+  result->status = quality_estimator_.Evaluate(quality_reference_pose, match,
                                                consecutive_failures_,
                                                static_map_.global_map_loaded);
+  if (previous.map_to_odom.is_valid &&
+      !IsMapToOdomUpdateStable(previous.map_to_odom, result->map_to_odom)) {
+    result->map_to_odom = previous.map_to_odom;
+    result->map_to_odom.stamp = frame.stamp;
+    result->map_to_base = tf::Compose(result->map_to_odom, result->odom_to_base);
+    result->map_to_base.stamp = frame.stamp;
+    result->status.pose_trusted = false;
+    result->status.converged = false;
+    result->status.consecutive_failures = ++consecutive_failures_;
+  } else if (result->status.pose_trusted) {
+    last_trusted_map_to_odom_ = result->map_to_odom;
+    has_trusted_map_to_odom_ = true;
+  }
   result->processing_latency_ns = common::NowNs() - begin_ns;
 
   const data::LidarFrame aligned_scan = TransformScanToMap(frame.lidar, result->map_to_base);
@@ -263,6 +287,34 @@ data::Pose3f LocalizationEngine::PredictedMapToBase(common::TimePoint stamp,
     return predicted;
   }
   return initial_pose_provider_.MakeInitialPose(stamp);
+}
+
+data::Pose3f LocalizationEngine::RelocalizationPrediction(common::TimePoint stamp,
+                                                          const data::Pose3f& odom_to_base) const {
+  if (has_trusted_map_to_odom_ && last_trusted_map_to_odom_.is_valid && odom_to_base.is_valid) {
+    data::Pose3f predicted = tf::Compose(last_trusted_map_to_odom_, odom_to_base);
+    predicted.stamp = stamp;
+    predicted.reference_frame = tf::kMapFrame;
+    predicted.child_frame = tf::kBaseLinkFrame;
+    predicted.rpy.z = NormalizeAngle(predicted.rpy.z);
+    predicted.is_valid = true;
+    return predicted;
+  }
+  return initial_pose_provider_.MakeInitialPose(stamp);
+}
+
+bool LocalizationEngine::IsMapToOdomUpdateStable(const data::Pose3f& previous_map_to_odom,
+                                                 const data::Pose3f& candidate_map_to_odom) const {
+  if (!previous_map_to_odom.is_valid || !candidate_map_to_odom.is_valid) {
+    return true;
+  }
+  const float dx = candidate_map_to_odom.position.x - previous_map_to_odom.position.x;
+  const float dy = candidate_map_to_odom.position.y - previous_map_to_odom.position.y;
+  const float translation = std::sqrt(dx * dx + dy * dy);
+  const float yaw_delta =
+      std::fabs(NormalizeAngle(candidate_map_to_odom.rpy.z - previous_map_to_odom.rpy.z));
+  return translation <= static_cast<float>(config_.map_to_odom_guard_translation_m) &&
+         yaw_delta <= static_cast<float>(config_.map_to_odom_guard_yaw_rad);
 }
 
 data::LidarFrame LocalizationEngine::TransformScanToMap(const data::LidarFrame& scan,

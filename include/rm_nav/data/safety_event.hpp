@@ -15,10 +15,14 @@ enum class SafetySeverity {
 enum class SafetyEventCode {
   kNone = 0,
   kSensorTimeout,
+  kDeadmanTimeout,
   kPoseLost,
   kPlannerStall,
   kObstacleTooClose,
+  kStaticCollision,
+  kDynamicCollision,
   kEmergencyStop,
+  kFailsafeOverride,
 };
 
 struct SafetyEvent {

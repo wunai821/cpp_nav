@@ -1,6 +1,0 @@
-{
-  "code": "POSE_LOST",
-  "severity": "WARNING",
-  "message": "localization degraded",
-  "stamp_ns": 13360666224749
-}

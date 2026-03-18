@@ -5,7 +5,12 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-set(UNITREE_LIDAR_SDK_ROOT "/home/naiwu/unitree_lidar_sdk" CACHE PATH
+if(DEFINED ENV{UNITREE_LIDAR_SDK_ROOT})
+  set(_RM_NAV_UNITREE_LIDAR_SDK_DEFAULT "$ENV{UNITREE_LIDAR_SDK_ROOT}")
+else()
+  set(_RM_NAV_UNITREE_LIDAR_SDK_DEFAULT "")
+endif()
+set(UNITREE_LIDAR_SDK_ROOT "${_RM_NAV_UNITREE_LIDAR_SDK_DEFAULT}" CACHE PATH
     "Path to the Unitree lidar SDK root directory")
 if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64" OR CMAKE_SYSTEM_PROCESSOR STREQUAL "amd64")
   set(UNITREE_LIDAR_SDK_ARCH "x86_64")
@@ -230,10 +235,20 @@ add_executable(test_localization_loop
 )
 target_link_libraries(test_localization_loop PRIVATE rm_nav_core)
 
+add_executable(test_localization_recovery
+  tests/unit/test_localization_recovery.cpp
+)
+target_link_libraries(test_localization_recovery PRIVATE rm_nav_core)
+
 add_executable(test_center_hold
   tests/unit/test_center_hold.cpp
 )
 target_link_libraries(test_center_hold PRIVATE rm_nav_core)
+
+add_executable(test_local_costmap_builder
+  tests/unit/test_local_costmap_builder.cpp
+)
+target_link_libraries(test_local_costmap_builder PRIVATE rm_nav_core)
 
 add_executable(test_mot_manager
   tests/unit/test_mot_manager.cpp
@@ -270,7 +285,9 @@ add_test(NAME test_map_loader COMMAND test_map_loader)
 add_test(NAME test_global_astar COMMAND test_global_astar)
 add_test(NAME test_preintegration COMMAND test_preintegration)
 add_test(NAME test_localization_loop COMMAND test_localization_loop)
+add_test(NAME test_localization_recovery COMMAND test_localization_recovery)
 add_test(NAME test_center_hold COMMAND test_center_hold)
+add_test(NAME test_local_costmap_builder COMMAND test_local_costmap_builder)
 add_test(NAME test_mot_manager COMMAND test_mot_manager)
 add_test(NAME test_planner_approach COMMAND test_planner_approach)
 add_test(NAME test_dwa_dynamic_risk COMMAND test_dwa_dynamic_risk)
@@ -323,8 +340,10 @@ set_tests_properties(
   test_map_loader
   test_global_astar
   test_localization_loop
+  test_localization_recovery
   test_center_hold
   test_preprocess_pipeline
+  test_local_costmap_builder
   test_mot_manager
   test_planner_approach
   test_dwa_dynamic_risk

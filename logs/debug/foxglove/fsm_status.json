@@ -1,8 +1,8 @@
 {
-  "state": "IDLE",
-  "previous_state": "SELF_CHECK",
-  "last_event_code": "SELF_CHECK_PASSED",
-  "last_event_summary": "self check passed",
+  "state": "MODE_SAVE",
+  "previous_state": "MODE_WARMUP",
+  "last_event_code": "NONE",
+  "last_event_summary": "save requested",
   "mapping_active": false,
   "waypoint_active": false,
   "localization_active": false,

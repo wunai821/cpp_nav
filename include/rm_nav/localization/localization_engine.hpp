@@ -59,6 +59,10 @@ class LocalizationEngine {
                                       const data::Pose3f& map_to_base) const;
   data::LidarFrame DownsampleScan(const data::LidarFrame& scan, int stride) const;
   common::Status ConfigureMatcherForLoad(bool light_mode);
+  data::Pose3f RelocalizationPrediction(common::TimePoint stamp,
+                                        const data::Pose3f& odom_to_base) const;
+  bool IsMapToOdomUpdateStable(const data::Pose3f& previous_map_to_odom,
+                               const data::Pose3f& candidate_map_to_odom) const;
 
   config::LocalizationConfig config_{};
   tf::TfTreeLite* tf_tree_{nullptr};
@@ -81,6 +85,8 @@ class LocalizationEngine {
   common::TimeNs last_matcher_latency_ns_{0};
   bool matcher_light_mode_active_{false};
   bool has_latest_odom_{false};
+  data::Pose3f last_trusted_map_to_odom_{};
+  bool has_trusted_map_to_odom_{false};
 };
 
 }  // namespace rm_nav::localization

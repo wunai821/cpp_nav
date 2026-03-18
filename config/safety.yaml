@@ -3,3 +3,8 @@ safety:  # 安全控制配置，用于限速、急停和状态机约束。
   loop_hz: 50  # 安全线程运行频率，单位 Hz。
   emergency_stop_distance_m: 0.6  # 障碍物距离小于该阈值时触发紧急制动，单位米。
   heartbeat_timeout_ms: 100  # STM32 超过该时间未收到心跳/反馈则进入接管保护，单位毫秒。
+  deadman_timeout_ms: 250  # planner 命令超过该时间未刷新则触发 deadman 制动，单位毫秒。
+  collision_check_lookahead_s: 0.8  # 安全层前向碰撞检查时域，单位秒。
+  collision_check_dt_s: 0.1  # 安全层碰撞检查积分步长，单位秒。
+  recovery_speed_scale: 0.35  # RECOVERY 模式下线速度缩放比例。
+  recovery_yaw_scale: 0.5  # RECOVERY 模式下角速度缩放比例。

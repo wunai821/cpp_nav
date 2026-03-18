@@ -247,6 +247,111 @@ float NormalizeAngle(float angle) {
   return angle;
 }
 
+bool CostmapCollisionAtLocal(const data::GridMap2D& costmap, float local_x, float local_y) {
+  if (costmap.width == 0U || costmap.height == 0U || costmap.occupancy.empty() ||
+      costmap.resolution_m <= 0.0F) {
+    return false;
+  }
+  const int center_x = static_cast<int>(costmap.width / 2U);
+  const int center_y = static_cast<int>(costmap.height / 2U);
+  const int gx = center_x + static_cast<int>(std::round(local_x / costmap.resolution_m));
+  const int gy = center_y + static_cast<int>(std::round(local_y / costmap.resolution_m));
+  if (gx < 0 || gy < 0 || gx >= static_cast<int>(costmap.width) ||
+      gy >= static_cast<int>(costmap.height)) {
+    return true;
+  }
+  return costmap.occupancy[static_cast<std::size_t>(gy) * costmap.width +
+                           static_cast<std::size_t>(gx)] >= 50U;
+}
+
+bool DynamicCollisionAhead(const data::Pose3f& pose, const data::ChassisCmd& cmd,
+                           const std::vector<data::DynamicObstacle>& obstacles,
+                           const config::SafetyConfig& config) {
+  float local_x = 0.0F;
+  float local_y = 0.0F;
+  float local_yaw = 0.0F;
+  const float lookahead_s = static_cast<float>(config.collision_check_lookahead_s);
+  const float dt_s = std::max(0.02F, static_cast<float>(config.collision_check_dt_s));
+  for (float t = dt_s; t <= lookahead_s + 1.0e-5F; t += dt_s) {
+    local_x += (cmd.vx_mps * std::cos(local_yaw) - cmd.vy_mps * std::sin(local_yaw)) * dt_s;
+    local_y += (cmd.vx_mps * std::sin(local_yaw) + cmd.vy_mps * std::cos(local_yaw)) * dt_s;
+    local_yaw = NormalizeAngle(local_yaw + cmd.wz_radps * dt_s);
+    const float world_x =
+        pose.position.x + std::cos(pose.rpy.z) * local_x - std::sin(pose.rpy.z) * local_y;
+    const float world_y =
+        pose.position.y + std::sin(pose.rpy.z) * local_x + std::cos(pose.rpy.z) * local_y;
+    for (const auto& obstacle : obstacles) {
+      const auto& predicted_pose =
+          t <= 0.5F ? obstacle.predicted_pose_05s : obstacle.predicted_pose_10s;
+      const float dx = predicted_pose.position.x - world_x;
+      const float dy = predicted_pose.position.y - world_y;
+      const float clearance = std::sqrt(dx * dx + dy * dy) - obstacle.radius_m;
+      if (clearance <= static_cast<float>(config.emergency_stop_distance_m)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+bool PlannerCmdTimedOut(const data::ChassisCmd& cmd, common::TimePoint now,
+                        const config::SafetyConfig& config) {
+  if (cmd.stamp == common::TimePoint{}) {
+    return true;
+  }
+  return std::chrono::duration_cast<std::chrono::milliseconds>(now - cmd.stamp).count() >
+         config.deadman_timeout_ms;
+}
+
+enum class CommandCollisionType {
+  kNone = 0,
+  kStatic,
+  kDynamic,
+};
+
+CommandCollisionType DetectCommandCollision(const data::Pose3f& pose,
+                                           const data::GridMap2D& costmap,
+                                           const std::vector<data::DynamicObstacle>& obstacles,
+                                           const data::ChassisCmd& cmd,
+                                           const config::SafetyConfig& config) {
+  float local_x = 0.0F;
+  float local_y = 0.0F;
+  float local_yaw = 0.0F;
+  const float lookahead_s = static_cast<float>(config.collision_check_lookahead_s);
+  const float dt_s = std::max(0.02F, static_cast<float>(config.collision_check_dt_s));
+  for (float t = dt_s; t <= lookahead_s + 1.0e-5F; t += dt_s) {
+    local_x += (cmd.vx_mps * std::cos(local_yaw) - cmd.vy_mps * std::sin(local_yaw)) * dt_s;
+    local_y += (cmd.vx_mps * std::sin(local_yaw) + cmd.vy_mps * std::cos(local_yaw)) * dt_s;
+    local_yaw = NormalizeAngle(local_yaw + cmd.wz_radps * dt_s);
+    if (CostmapCollisionAtLocal(costmap, local_x, local_y)) {
+      return CommandCollisionType::kStatic;
+    }
+  }
+  if (DynamicCollisionAhead(pose, cmd, obstacles, config)) {
+    return CommandCollisionType::kDynamic;
+  }
+  return CommandCollisionType::kNone;
+}
+
+data::ChassisCmd ClampCommandForMode(const data::ChassisCmd& input,
+                                     const fsm::NavFsmSnapshot& snapshot,
+                                     const config::LoadedConfig& config,
+                                     common::TimePoint stamp) {
+  data::ChassisCmd cmd = input;
+  cmd.stamp = stamp;
+  const bool hold_mode = snapshot.center_hold_active;
+  const float max_vx = static_cast<float>(hold_mode ? config.planner.hold_max_v_mps
+                                                    : config.planner.max_vx_mps);
+  const float max_vy = static_cast<float>(hold_mode ? config.planner.hold_max_v_mps
+                                                    : config.planner.max_vy_mps);
+  const float max_wz = static_cast<float>(hold_mode ? config.planner.hold_max_wz_radps
+                                                    : config.planner.max_wz_radps);
+  cmd.vx_mps = ClampAbs(cmd.vx_mps, max_vx);
+  cmd.vy_mps = ClampAbs(cmd.vy_mps, max_vy);
+  cmd.wz_radps = ClampAbs(cmd.wz_radps, max_wz);
+  return cmd;
+}
+
 data::ChassisCmd BuildWaypointCmd(const data::Pose3f& pose, const data::Pose3f& goal,
                                   const config::LoadedConfig& config) {
   data::ChassisCmd cmd;
@@ -358,14 +463,22 @@ std::string SafetyEventCodeString(data::SafetyEventCode code) {
       return "NONE";
     case data::SafetyEventCode::kSensorTimeout:
       return "SENSOR_TIMEOUT";
+    case data::SafetyEventCode::kDeadmanTimeout:
+      return "DEADMAN_TIMEOUT";
     case data::SafetyEventCode::kPoseLost:
       return "POSE_LOST";
     case data::SafetyEventCode::kPlannerStall:
       return "PLANNER_STALL";
     case data::SafetyEventCode::kObstacleTooClose:
       return "OBSTACLE_TOO_CLOSE";
+    case data::SafetyEventCode::kStaticCollision:
+      return "STATIC_COLLISION";
+    case data::SafetyEventCode::kDynamicCollision:
+      return "DYNAMIC_COLLISION";
     case data::SafetyEventCode::kEmergencyStop:
       return "EMERGENCY_STOP";
+    case data::SafetyEventCode::kFailsafeOverride:
+      return "FAILSAFE_OVERRIDE";
   }
   return "UNKNOWN";
 }
@@ -1070,6 +1183,11 @@ common::Status Runtime::ConfigurePipeline() {
   preprocess_config.self_mask_x_max_m = loaded_config_.sensors.lidar_self_mask.x_max_m;
   preprocess_config.self_mask_y_min_m = loaded_config_.sensors.lidar_self_mask.y_min_m;
   preprocess_config.self_mask_y_max_m = loaded_config_.sensors.lidar_self_mask.y_max_m;
+  perception::LocalCostmapConfig local_costmap_config;
+  status = local_costmap_builder_.Configure(local_costmap_config);
+  if (!status.ok()) {
+    return status;
+  }
   if (mapping_mode_) {
     status = mapping_engine_.Initialize(loaded_config_.mapping);
     if (!status.ok()) {
@@ -1546,8 +1664,10 @@ void Runtime::PerceptionThreadMain() {
     }
     if (pose.is_valid) {
       latest_filtered_scan_.Publish(*filtered_frame->get());
-      local_costmap_builder_.BuildAndPublish(*filtered_frame->get(), pose);
       mot_manager_.UpdateAndPublish(*filtered_frame->get(), pose);
+      const auto obstacles = mot_manager_.LatestObstacles();
+      local_costmap_builder_.BuildAndPublish(*filtered_frame->get(), pose,
+                                             obstacles.obstacles);
       const auto mot_perf = mot_manager_.LatestPerf();
       mot_clustering_latency_ns_.store(mot_perf.clustering_latency_ns,
                                        std::memory_order_release);
@@ -1639,6 +1759,21 @@ void Runtime::SafetyThreadMain() {
     }
 
     const auto safe_cmd = SelectSafeCmd(snapshot, now);
+    const auto localization_result = localization_.LatestResult();
+    const auto planner_cmd = planner_.LatestCmd();
+    const auto costmap = local_costmap_builder_.LatestCostmap();
+    const auto obstacles = mot_manager_.LatestObstacles();
+    const bool deadman_triggered =
+        snapshot.localization_active && PlannerCmdTimedOut(planner_cmd, now, loaded_config_.safety);
+    const auto collision_type =
+        snapshot.localization_active && localization_result.map_to_base.is_valid &&
+                localization_result.status.pose_trusted && !planner_cmd.brake &&
+                !deadman_triggered
+            ? DetectCommandCollision(localization_result.map_to_base, costmap,
+                                     obstacles.obstacles,
+                                     ClampCommandForMode(planner_cmd, snapshot, loaded_config_, now),
+                                     loaded_config_.safety)
+            : CommandCollisionType::kNone;
 
     if (!fsm_context.heartbeat_ok) {
       data::SafetyEvent safety_event;
@@ -1646,6 +1781,34 @@ void Runtime::SafetyThreadMain() {
       safety_event.code = data::SafetyEventCode::kSensorTimeout;
       safety_event.severity = data::SafetySeverity::kCritical;
       safety_event.message = "stm32 heartbeat timeout";
+      latest_safety_event_.Publish(safety_event);
+    } else if (snapshot.failsafe_active) {
+      data::SafetyEvent safety_event;
+      safety_event.stamp = now;
+      safety_event.code = data::SafetyEventCode::kFailsafeOverride;
+      safety_event.severity = data::SafetySeverity::kCritical;
+      safety_event.message = "fsm forced chassis command override";
+      latest_safety_event_.Publish(safety_event);
+    } else if (deadman_triggered) {
+      data::SafetyEvent safety_event;
+      safety_event.stamp = now;
+      safety_event.code = data::SafetyEventCode::kDeadmanTimeout;
+      safety_event.severity = data::SafetySeverity::kCritical;
+      safety_event.message = "planner command deadman timeout";
+      latest_safety_event_.Publish(safety_event);
+    } else if (collision_type == CommandCollisionType::kStatic) {
+      data::SafetyEvent safety_event;
+      safety_event.stamp = now;
+      safety_event.code = data::SafetyEventCode::kStaticCollision;
+      safety_event.severity = data::SafetySeverity::kCritical;
+      safety_event.message = "command gate blocked by static obstacle";
+      latest_safety_event_.Publish(safety_event);
+    } else if (collision_type == CommandCollisionType::kDynamic) {
+      data::SafetyEvent safety_event;
+      safety_event.stamp = now;
+      safety_event.code = data::SafetyEventCode::kDynamicCollision;
+      safety_event.severity = data::SafetySeverity::kCritical;
+      safety_event.message = "command gate blocked by dynamic obstacle";
       latest_safety_event_.Publish(safety_event);
     } else if (fsm_context.safety_triggered) {
       data::SafetyEvent safety_event;
@@ -1667,13 +1830,6 @@ void Runtime::SafetyThreadMain() {
       safety_event.code = data::SafetyEventCode::kPlannerStall;
       safety_event.severity = data::SafetySeverity::kWarning;
       safety_event.message = "planner has no path";
-      latest_safety_event_.Publish(safety_event);
-    } else if (snapshot.failsafe_active) {
-      data::SafetyEvent safety_event;
-      safety_event.stamp = now;
-      safety_event.code = data::SafetyEventCode::kEmergencyStop;
-      safety_event.severity = data::SafetySeverity::kCritical;
-      safety_event.message = "fsm entered failsafe";
       latest_safety_event_.Publish(safety_event);
     }
 
@@ -2068,13 +2224,24 @@ fsm::NavFsmContext Runtime::BuildFsmContext(bool referee_changed) const {
   if (context.combat_ready) {
     const auto localization_result = localization_.LatestResult();
     const auto planner_status = planner_.LatestStatus();
+    const auto latest_cmd = planner_.LatestCmd();
     context.localization_degraded =
         localization_result.map_to_base.is_valid &&
         (!localization_result.status.pose_trusted ||
-         localization_result.status.consecutive_failures >= 3U);
+         localization_result.status.consecutive_failures >=
+             static_cast<std::uint32_t>(
+                 std::max(1, loaded_config_.localization.relocalization_failure_threshold)));
     context.planner_failed =
         planned_cycles_.load(std::memory_order_relaxed) > 0U &&
-        !planner_status.reached && !planner_status.path_available;
+        (!planner_status.reached && !planner_status.path_available);
+    if (latest_cmd.stamp != common::TimePoint{}) {
+      const auto cmd_age_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                  common::Now() - latest_cmd.stamp)
+                                  .count();
+      if (cmd_age_ms > loaded_config_.safety.deadman_timeout_ms) {
+        context.planner_failed = true;
+      }
+    }
     context.center_reached = planner_status.reached;
     context.center_drifted =
         planner_status.mode == planning::GoalMode::kCenterHold &&
@@ -2128,21 +2295,39 @@ data::ChassisCmd Runtime::SelectSafeCmd(const fsm::NavFsmSnapshot& snapshot,
       const auto localization_result = localization_.LatestResult();
       const auto pose = localization_result.map_to_base;
       const auto costmap = local_costmap_builder_.LatestCostmap();
+      const auto obstacles = mot_manager_.LatestObstacles();
+      const auto planner_cmd = planner_.LatestCmd();
       if (!pose.is_valid || costmap.width == 0U) {
         break;
       }
-      safe_cmd = planner_.LatestCmd();
+      if (snapshot.failsafe_active) {
+        break;
+      }
       if (!localization_result.status.pose_trusted) {
+        break;
+      }
+      if (PlannerCmdTimedOut(planner_cmd, stamp, loaded_config_.safety)) {
+        break;
+      }
+
+      safe_cmd = ClampCommandForMode(planner_cmd, snapshot, loaded_config_, stamp);
+      if (snapshot.recovery_active) {
+        safe_cmd.vx_mps *= static_cast<float>(loaded_config_.safety.recovery_speed_scale);
+        safe_cmd.vy_mps *= static_cast<float>(loaded_config_.safety.recovery_speed_scale);
+        safe_cmd.wz_radps *= static_cast<float>(loaded_config_.safety.recovery_yaw_scale);
+      }
+      if (safe_cmd.brake ||
+          DetectCommandCollision(pose, costmap, obstacles.obstacles, safe_cmd,
+                                 loaded_config_.safety) != CommandCollisionType::kNone) {
         safe_cmd = {};
         safe_cmd.stamp = stamp;
         safe_cmd.brake = true;
         break;
       }
       if (snapshot.recovery_active) {
-        safe_cmd.vx_mps *= 0.35F;
-        safe_cmd.vy_mps *= 0.35F;
-        safe_cmd.wz_radps *= 0.5F;
+        safe_cmd = ClampCommandForMode(safe_cmd, snapshot, loaded_config_, stamp);
       }
+      safe_cmd.brake = false;
       break;
     }
     case fsm::NavState::kBoot:

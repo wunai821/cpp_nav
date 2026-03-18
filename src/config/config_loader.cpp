@@ -373,6 +373,15 @@ common::Status ConfigLoader::LoadFromDirectory(
     result.localization.reduced_scan_stride =
         GetInt(merged_values, "localization.reduced_scan_stride",
                result.localization.reduced_scan_stride);
+    result.localization.relocalization_failure_threshold =
+        GetInt(merged_values, "localization.relocalization_failure_threshold",
+               result.localization.relocalization_failure_threshold);
+    result.localization.map_to_odom_guard_translation_m =
+        GetDouble(merged_values, "localization.map_to_odom_guard_translation_m",
+                  result.localization.map_to_odom_guard_translation_m);
+    result.localization.map_to_odom_guard_yaw_rad =
+        GetDouble(merged_values, "localization.map_to_odom_guard_yaw_rad",
+                  result.localization.map_to_odom_guard_yaw_rad);
 
     result.mapping.enabled =
         GetBool(merged_values, "mapping.enabled", result.mapping.enabled);
@@ -488,6 +497,21 @@ common::Status ConfigLoader::LoadFromDirectory(
     result.safety.heartbeat_timeout_ms =
         GetInt(merged_values, "safety.heartbeat_timeout_ms",
                result.safety.heartbeat_timeout_ms);
+    result.safety.deadman_timeout_ms =
+        GetInt(merged_values, "safety.deadman_timeout_ms",
+               result.safety.deadman_timeout_ms);
+    result.safety.collision_check_lookahead_s =
+        GetDouble(merged_values, "safety.collision_check_lookahead_s",
+                  result.safety.collision_check_lookahead_s);
+    result.safety.collision_check_dt_s =
+        GetDouble(merged_values, "safety.collision_check_dt_s",
+                  result.safety.collision_check_dt_s);
+    result.safety.recovery_speed_scale =
+        GetDouble(merged_values, "safety.recovery_speed_scale",
+                  result.safety.recovery_speed_scale);
+    result.safety.recovery_yaw_scale =
+        GetDouble(merged_values, "safety.recovery_yaw_scale",
+                  result.safety.recovery_yaw_scale);
 
     result.spawn.x_m = GetDouble(merged_values, "spawn.x_m", result.spawn.x_m);
     result.spawn.y_m = GetDouble(merged_values, "spawn.y_m", result.spawn.y_m);

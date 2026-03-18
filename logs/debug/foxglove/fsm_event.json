@@ -1,5 +1,5 @@
 {
-  "event_code": "SELF_CHECK_PASSED",
-  "summary": "self check passed",
-  "stamp_ns": 13355266212266
+  "event_code": "NONE",
+  "summary": "save requested",
+  "stamp_ns": 43923720089534
 }
