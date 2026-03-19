@@ -37,6 +37,10 @@ struct MappingConfig {
   double dynamic_known_obstacle_margin_m{0.25};
   double dynamic_known_obstacle_min_confidence{0.35};
   std::string pose_source{"odom"};
+  bool frontend_motion_compensation_enabled{true};
+  double frontend_motion_compensation_min_yaw_rad{0.03};
+  double frontend_imu_yaw_weight{0.75};
+  double frontend_imu_position_weight{0.15};
   int frontend_match_max_iterations{10};
   double frontend_correspondence_distance_m{0.75};
   double frontend_min_match_score{0.2};
@@ -51,11 +55,13 @@ struct MappingConfig {
   double loop_candidate_distance_threshold_m{1.0};
   double loop_candidate_min_time_separation_s{5.0};
   double loop_candidate_max_yaw_delta_rad{0.6};
+  double loop_candidate_min_revisit_score{0.35};
   std::string loop_matcher{"icp"};
   int loop_match_max_iterations{8};
   double loop_match_correspondence_distance_m{0.75};
   double loop_match_min_score{0.55};
   int loop_match_max_points{160};
+  double loop_match_min_structure_span_m{0.45};
   double loop_correction_min_score{0.6};
   double loop_correction_max_translation_m{0.25};
   double loop_correction_max_yaw_rad{0.15};

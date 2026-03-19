@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 #include "rm_nav/config/localization_config.hpp"
 #include "rm_nav/localization/icp_matcher.hpp"
@@ -16,6 +17,8 @@ struct LocalizationStatus {
   std::uint32_t consecutive_failures{0};
   bool pose_trusted{false};
   bool map_loaded{false};
+  std::string rejection_reason{"none"};
+  std::string degraded_mode{"none"};
 };
 
 class PoseQualityEstimator {

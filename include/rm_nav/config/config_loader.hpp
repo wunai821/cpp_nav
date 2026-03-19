@@ -5,10 +5,12 @@
 
 #include "rm_nav/common/status.hpp"
 #include "rm_nav/config/comm_config.hpp"
+#include "rm_nav/config/costmap_config.hpp"
 #include "rm_nav/config/debug_config.hpp"
 #include "rm_nav/config/frames_config.hpp"
 #include "rm_nav/config/localization_config.hpp"
 #include "rm_nav/config/mapping_config.hpp"
+#include "rm_nav/config/mot_config.hpp"
 #include "rm_nav/config/planner_config.hpp"
 #include "rm_nav/config/safety_config.hpp"
 #include "rm_nav/config/sensor_config.hpp"
@@ -27,6 +29,8 @@ struct LoadedConfig {
   DebugConfig debug{};
   LocalizationConfig localization{};
   MappingConfig mapping{};
+  CostmapConfig costmap{};
+  MotConfig mot{};
   PlannerConfig planner{};
   SafetyConfig safety{};
   SpawnConfig spawn{};

@@ -29,6 +29,41 @@ float ClampDelta(float target, float previous, float delta_limit) {
 
 }  // namespace
 
+const char* ToString(CommandGateReason reason) {
+  switch (reason) {
+    case CommandGateReason::kNone:
+      return "none";
+    case CommandGateReason::kStateBlocked:
+      return "state_blocked";
+    case CommandGateReason::kBrakeRequested:
+      return "brake_requested";
+    case CommandGateReason::kStaticCollision:
+      return "static_collision";
+    case CommandGateReason::kDynamicCollision:
+      return "dynamic_collision";
+    case CommandGateReason::kPlannerTimeout:
+      return "planner_timeout";
+    case CommandGateReason::kCommunicationLost:
+      return "communication_lost";
+    case CommandGateReason::kChassisFeedbackLost:
+      return "chassis_feedback_lost";
+    case CommandGateReason::kCostmapInvalid:
+      return "costmap_invalid";
+    case CommandGateReason::kCostmapStale:
+      return "costmap_stale";
+    case CommandGateReason::kLocalizationDegraded:
+      return "localization_degraded";
+    case CommandGateReason::kPlannerFailed:
+      return "planner_failed";
+    case CommandGateReason::kModeTransition:
+      return "mode_transition";
+    case CommandGateReason::kFailsafeOverride:
+      return "failsafe_override";
+    default:
+      return "unknown";
+  }
+}
+
 common::Status CommandGate::Configure(const config::SafetyConfig& config) {
   config_ = config;
   Reset();
@@ -104,6 +139,9 @@ CommandGateResult CommandGate::Gate(const data::ChassisCmd& proposed_cmd, common
   result.command.wz_radps =
       ClampAbs(ClampDelta(clamped_wz, last_command_.wz_radps, delta_w), max_wz);
   result.command.brake = false;
+  result.limited = std::fabs(result.command.vx_mps - proposed_cmd.vx_mps) > 1.0e-4F ||
+                   std::fabs(result.command.vy_mps - proposed_cmd.vy_mps) > 1.0e-4F ||
+                   std::fabs(result.command.wz_radps - proposed_cmd.wz_radps) > 1.0e-4F;
   last_command_ = result.command;
   return result;
 }

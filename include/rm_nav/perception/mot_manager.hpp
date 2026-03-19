@@ -10,6 +10,8 @@
 #include "rm_nav/data/lidar_frame.hpp"
 #include "rm_nav/data/local_map.hpp"
 #include "rm_nav/data/pose.hpp"
+#include "rm_nav/perception/euclidean_cluster.hpp"
+#include "rm_nav/perception/tracker_kf.hpp"
 
 namespace rm_nav::perception {
 
@@ -49,37 +51,11 @@ class MotManager {
   MotPerfSnapshot LatestPerf() const { return latest_perf_.ReadSnapshot(); }
 
  private:
-  struct Cluster {
-    common::Vec3f centroid{};
-    float radius_m{0.0F};
-    std::size_t point_count{0};
-  };
-
-  struct Track {
-    common::ObjectId id{0};
-    std::array<float, 4> state{{0.0F, 0.0F, 0.0F, 0.0F}};
-    std::array<float, 16> covariance{{0.0F}};
-    float radius_m{0.25F};
-    float confidence{0.0F};
-    std::uint32_t age{0};
-    std::uint32_t missed_frames{0};
-    common::TimePoint stamp{};
-    bool confirmed{false};
-  };
-
-  common::Vec3f TransformPointToWorld(const data::PointXYZI& point,
-                                      const data::Pose3f& pose) const;
-  std::vector<Cluster> BuildClusters(const data::LidarFrame& filtered_frame,
-                                     const data::Pose3f& pose) const;
-  void PredictTrack(common::TimePoint stamp, Track* track) const;
-  void UpdateTrack(const Cluster& cluster, common::TimePoint stamp, Track* track) const;
-  data::DynamicObstacle ToDynamicObstacle(const Track& track) const;
-
   MotConfig config_{};
+  EuclideanCluster clusterer_{};
+  TrackerKf tracker_{};
   common::DoubleBuffer<data::DynamicObstacleSet> latest_obstacles_{};
   common::DoubleBuffer<MotPerfSnapshot> latest_perf_{};
-  std::vector<Track> tracks_{};
-  common::ObjectId next_track_id_{1};
   bool reduce_roi_next_cycle_{false};
   bool configured_{false};
 };

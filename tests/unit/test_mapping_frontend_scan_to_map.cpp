@@ -73,7 +73,7 @@ int main() {
   config.z_min_m = 0.2;
   config.z_max_m = 1.2;
   config.occupancy_resolution_m = 0.1;
-  config.pose_source = "scan_to_map_icp";
+  config.pose_source = "lio_lite_scan_to_map";
   config.frontend_match_max_iterations = 12;
   config.frontend_correspondence_distance_m = 0.8;
   config.frontend_min_match_score = 0.2;
@@ -81,6 +81,7 @@ int main() {
   config.frontend_min_map_points = 20;
   config.frontend_submap_radius_m = 1.4;
   config.frontend_submap_max_points = 40;
+  config.frontend_imu_yaw_weight = 1.0;
   config.keyframe_translation_threshold_m = 0.4;
   config.keyframe_yaw_threshold_rad = 0.2;
   config.loop_correction_apply_translation_step_m = 0.0;
@@ -105,7 +106,7 @@ int main() {
              .ok());
 
   const auto result = engine.LatestResult();
-  assert(result.pose_source == "scan_to_map_icp");
+  assert(result.pose_source == "lio_lite_scan_to_map");
   assert(result.frontend_converged);
   assert(!result.frontend_fallback);
   assert(result.frontend_reference_points >= 20U);

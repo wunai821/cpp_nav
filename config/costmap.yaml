@@ -1,2 +1,16 @@
-# 局部代价图配置：为静态障碍层、动态障碍层和局部规划代价图参数预留。
-# 当前阶段仅使用代码内最小默认值；该文件仍处于 roadmap/预留状态，后续会把 layer 参数逐步迁入这里。
+# 局部代价地图 / 分层感知配置。
+# 这些参数现在会传入 src/app/runtime.cpp -> LocalCostmapBuilder。
+
+costmap:
+  # 以机器人为中心的局部代价地图在 x 方向上的单元格数量。
+  width: 80
+  # 以机器人为中心的局部代价地图在 y 方向上的单元格数量。
+  height: 80
+  # 每个单元格对应的米数。
+  resolution_m: 0.10
+  # 写入静态障碍物层时，忽略低于该 z 值的点。
+  obstacle_layer_height_m: 0.05
+  # 面向规划器的代价地图所使用的静态膨胀半径。
+  inflation_radius_m: 0.30
+  # 在动态层中，为已跟踪的动态障碍物额外增加的膨胀半径。
+  dynamic_obstacle_inflation_m: 0.45

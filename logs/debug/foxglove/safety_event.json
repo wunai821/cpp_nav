@@ -2,5 +2,5 @@
   "code": "FAILSAFE_OVERRIDE",
   "severity": "CRITICAL",
   "message": "hold timeout escalated to failsafe",
-  "stamp_ns": 65488672882540
+  "stamp_ns": 15506318725967
 }

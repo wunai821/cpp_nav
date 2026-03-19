@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 #include "rm_nav/common/double_buffer.hpp"
 #include "rm_nav/common/ring_queue.hpp"
@@ -31,6 +32,7 @@ struct LocalizationResult {
   common::TimeNs matcher_latency_ns{0};
   common::TimeNs processing_latency_ns{0};
   bool light_match_mode{false};
+  std::string matcher_name{"none"};
 };
 
 class LocalizationEngine {
@@ -52,6 +54,7 @@ class LocalizationEngine {
   const StaticMap& static_map() const { return static_map_; }
   bool map_loaded() const { return static_map_.global_map_loaded; }
   std::uint64_t dropped_frames() const { return dropped_frames_; }
+  const std::string& CurrentMatcherLabel() const { return current_matcher_label_; }
 
  private:
   data::Pose3f OdomToBaseFromState(const data::OdomState& odom) const;
@@ -91,6 +94,12 @@ class LocalizationEngine {
   data::Pose3f last_trusted_map_to_base_{};
   data::Pose3f last_trusted_map_to_odom_{};
   bool has_trusted_map_to_odom_{false};
+  std::string current_matcher_label_{"none"};
+  std::string last_logged_matcher_label_{"none"};
+  RelocalizationPhase last_logged_relocalization_phase_{RelocalizationPhase::kTracking};
+  std::string last_logged_rejection_reason_{"none"};
+  bool last_logged_pose_trusted_{false};
+  bool last_logged_light_match_mode_{false};
 };
 
 }  // namespace rm_nav::localization

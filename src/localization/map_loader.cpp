@@ -31,6 +31,32 @@ std::string ReadTextFile(const std::filesystem::path& path) {
   return stream.str();
 }
 
+std::string InferMapVersionLabel(const std::filesystem::path& global_map_path,
+                                 const std::filesystem::path& occupancy_path) {
+  const auto source = !global_map_path.empty() ? global_map_path : occupancy_path;
+  if (source.empty()) {
+    return "unknown";
+  }
+
+  const auto normalized = source.lexically_normal();
+  const auto parent = normalized.parent_path();
+  if (parent.empty()) {
+    return normalized.filename().string();
+  }
+  const auto parent_name = parent.filename().string();
+  const auto grand_parent = parent.parent_path();
+  if (!grand_parent.empty()) {
+    const auto grand_parent_name = grand_parent.filename().string();
+    if (!grand_parent_name.empty() && !parent_name.empty()) {
+      return grand_parent_name + "/" + parent_name;
+    }
+  }
+  if (!parent_name.empty()) {
+    return parent_name;
+  }
+  return normalized.filename().string();
+}
+
 bool ExtractJsonNumber(const std::string& text, const std::string& key, double* value) {
   if (value == nullptr) {
     return false;
@@ -179,6 +205,7 @@ common::Status MapLoader::Load(const std::string& config_dir,
 
   map->occupancy_path = occupancy_path.lexically_normal().string();
   map->global_map_path = global_map_path.lexically_normal().string();
+  map->version_label = InferMapVersionLabel(global_map_path, occupancy_path);
 
   auto status = LoadMapMeta(meta_path, &map->occupancy);
   if (!status.ok()) {

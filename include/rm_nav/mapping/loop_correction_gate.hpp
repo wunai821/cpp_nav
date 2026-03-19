@@ -36,6 +36,7 @@ struct LoopCorrectionDecision {
   float yaw_correction_rad{0.0F};
   int consecutive_failures_before{0};
   int consecutive_failures_after{0};
+  bool auto_disabled{false};
   LoopCorrectionDecisionReason reason{LoopCorrectionDecisionReason::kNone};
   std::string reason_message{"not evaluated"};
   data::Pose3f accepted_pose_candidate_frame{};

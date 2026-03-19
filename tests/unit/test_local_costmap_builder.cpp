@@ -36,7 +36,7 @@ int main() {
   frame.stamp = rm_nav::common::Now();
 
   rm_nav::data::PointXYZI obstacle_point;
-  obstacle_point.x = 1.0F;
+  obstacle_point.x = 2.0F;
   obstacle_point.y = 0.0F;
   obstacle_point.z = 0.20F;
   frame.points.push_back(obstacle_point);
@@ -60,20 +60,32 @@ int main() {
   dynamic_obstacle.radius_m = 0.20F;
   dynamic_obstacle.confidence = 0.95F;
 
-  rm_nav::data::GridMap2D costmap;
-  assert(builder.Build(frame, pose, {dynamic_obstacle}, &costmap).ok());
+  assert(builder.BuildAndPublish(frame, pose, {dynamic_obstacle}).ok());
+  const auto costmap = builder.LatestCostmap();
+  const auto static_layer = builder.LatestStaticLayer();
+  const auto dynamic_layer = builder.LatestDynamicLayer();
   assert(costmap.width == 80U);
   assert(costmap.height == 80U);
+  assert(static_layer.width == costmap.width);
+  assert(dynamic_layer.width == costmap.width);
 
-  const auto static_cost = CellAt(costmap, 1.0F, 0.0F);
-  const auto inflation_cost = CellAt(costmap, 1.2F, 0.0F);
-  const auto dynamic_cost = CellAt(costmap, 0.5F, 0.5F);
-  const auto dynamic_predicted_cost = CellAt(costmap, 0.8F, 0.5F);
+  const auto static_cost = CellAt(costmap, 2.0F, 0.0F);
+  const auto inflation_cost = CellAt(costmap, 2.2F, 0.0F);
+  const auto costmap_dynamic_cost = CellAt(costmap, 0.5F, 0.5F);
+  const auto costmap_dynamic_predicted_cost = CellAt(costmap, 0.8F, 0.5F);
+  const auto static_layer_cost = CellAt(static_layer, 2.0F, 0.0F);
+  const auto dynamic_cost = CellAt(dynamic_layer, 0.5F, 0.5F);
+  const auto dynamic_predicted_cost = CellAt(dynamic_layer, 0.8F, 0.5F);
+  const auto dynamic_layer_static_cost = CellAt(dynamic_layer, 2.0F, 0.0F);
 
   assert(static_cost >= 100U);
   assert(inflation_cost >= 80U);
+  assert(static_layer_cost >= 100U);
+  assert(costmap_dynamic_cost == 0U);
+  assert(costmap_dynamic_predicted_cost == 0U);
   assert(dynamic_cost >= 100U);
-  assert(dynamic_predicted_cost >= 100U);
+  assert(dynamic_predicted_cost >= 90U);
+  assert(dynamic_layer_static_cost == 0U);
 
   const auto inflated_cells =
       std::count_if(costmap.occupancy.begin(), costmap.occupancy.end(),
@@ -81,7 +93,11 @@ int main() {
   const auto occupied_cells =
       std::count_if(costmap.occupancy.begin(), costmap.occupancy.end(),
                     [](std::uint8_t cost) { return cost >= 100U; });
+  const auto dynamic_cells =
+      std::count_if(dynamic_layer.occupancy.begin(), dynamic_layer.occupancy.end(),
+                    [](std::uint8_t cost) { return cost >= 90U; });
   assert(inflated_cells > occupied_cells);
+  assert(dynamic_cells > 0U);
 
   std::cout << "test_local_costmap_builder passed\n";
   return 0;

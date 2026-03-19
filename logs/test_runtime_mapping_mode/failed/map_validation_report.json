@@ -1,7 +1,7 @@
 {
   "passed": false,
   "trajectory_consistency_passed": true,
-  "global_point_count": 80,
+  "global_point_count": 64,
   "occupied_cell_count": 6735,
   "trajectory_sample_count": 5,
   "loop_consistency_sample_count": 0,

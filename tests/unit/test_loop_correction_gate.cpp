@@ -50,6 +50,7 @@ int main() {
   match.score = 0.92F;
   assert(gate.Evaluate(config, candidate, match, 3, &decision).ok());
   assert(!decision.accepted);
+  assert(decision.auto_disabled);
   assert(decision.reason ==
          rm_nav::mapping::LoopCorrectionDecisionReason::kTooManyRecentFailures);
   assert(decision.consecutive_failures_after == 4);

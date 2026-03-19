@@ -151,6 +151,112 @@ const char* ToString(localization::RelocalizationRecoveryAction action) {
   }
 }
 
+const char* ToString(planning::GoalMode mode) {
+  switch (mode) {
+    case planning::GoalMode::kApproachCenter:
+      return "approach_center";
+    case planning::GoalMode::kCenterHold:
+      return "center_hold";
+    default:
+      return "unknown";
+  }
+}
+
+std::string CurrentMapLabel(bool mapping_active, const localization::StaticMap& map) {
+  if (mapping_active) {
+    return "warmup_live";
+  }
+  return map.version_label.empty() ? "unknown" : map.version_label;
+}
+
+std::string SafetyGateReasonSummary(const safety::SafetyResult& result) {
+  if (result.has_event && !result.event.message.empty()) {
+    return std::string(result.event.message);
+  }
+  if (result.gate_reason != safety::CommandGateReason::kNone) {
+    return safety::ToString(result.gate_reason);
+  }
+  if (result.authority != safety::SafetyCommandAuthority::kAllow) {
+    return safety::ToString(result.authority);
+  }
+  if (result.gate_limited) {
+    return "command_limited";
+  }
+  return "none";
+}
+
+std::string CurrentDegradedSummary(const localization::LocalizationResult& localization_result,
+                                   const planning::PlannerStatus& planner_status,
+                                   const safety::SafetyResult& safety_result) {
+  if (safety_result.state == safety::SafetyState::kHold ||
+      safety_result.state == safety::SafetyState::kFailsafe) {
+    return std::string("safety_") + safety::ToString(safety_result.state);
+  }
+  if (safety_result.authority == safety::SafetyCommandAuthority::kFreeze ||
+      safety_result.authority == safety::SafetyCommandAuthority::kFailsafe) {
+    return std::string("safety_") + safety::ToString(safety_result.authority);
+  }
+  if (localization_result.status.degraded_mode != "none") {
+    return localization_result.status.degraded_mode;
+  }
+  if (planner_status.degraded_mode != "none") {
+    return planner_status.degraded_mode;
+  }
+  if (safety_result.gate_limited) {
+    return "command_gate_limited";
+  }
+  return "none";
+}
+
+std::string WhyRobotNotMoving(const fsm::NavFsmSnapshot& snapshot,
+                              const localization::LocalizationResult& localization_result,
+                              const planning::PlannerStatus& planner_status,
+                              const safety::SafetyResult& safety_result) {
+  if (snapshot.state == fsm::NavState::kBoot || snapshot.state == fsm::NavState::kSelfCheck ||
+      snapshot.state == fsm::NavState::kIdle) {
+    return "fsm_not_in_navigation_mode";
+  }
+  if (snapshot.failsafe_active) {
+    return "fsm_failsafe";
+  }
+  if (safety_result.state == safety::SafetyState::kHold ||
+      safety_result.state == safety::SafetyState::kFailsafe ||
+      safety_result.gate_reason != safety::CommandGateReason::kNone) {
+    return SafetyGateReasonSummary(safety_result);
+  }
+  if (!localization_result.status.pose_trusted) {
+    return localization_result.status.rejection_reason;
+  }
+  if (!planner_status.global_plan_succeeded || !planner_status.local_plan_succeeded) {
+    return planner_status.failure_reason;
+  }
+  if (planner_status.reached) {
+    return "goal_reached_center_hold";
+  }
+  return "none";
+}
+
+std::string WhyRobotSlowing(const fsm::NavFsmSnapshot& snapshot,
+                            const planning::PlannerStatus& planner_status,
+                            const safety::SafetyResult& safety_result) {
+  if (snapshot.recovery_active) {
+    return "fsm_recovery_scale";
+  }
+  if (safety_result.authority == safety::SafetyCommandAuthority::kLimited) {
+    return "safety_limited_cmd";
+  }
+  if (safety_result.gate_limited) {
+    return "command_gate_limit";
+  }
+  if (planner_status.fallback_cmd_used) {
+    return "path_follower_fallback";
+  }
+  if (planner_status.mode == planning::GoalMode::kCenterHold) {
+    return "center_hold";
+  }
+  return "none";
+}
+
 void WritePointCloudPcd(const std::filesystem::path& path,
                         const std::vector<data::PointXYZI>& points) {
   std::ofstream output(path);
@@ -978,6 +1084,8 @@ void PublishFoxgloveJson(debug::FoxgloveServer* server, std::uint32_t channel_id
 
 void WriteDebugSnapshot(const localization::LocalizationEngine& localization,
                         const planning::PlannerCoordinator& planner,
+                        const planning::RecoveryPlannerStatus& recovery_status,
+                        const safety::SafetyResult& safety_result,
                         const std::filesystem::path& output_dir) {
   std::filesystem::create_directories(output_dir);
 
@@ -1000,12 +1108,16 @@ void WriteDebugSnapshot(const localization::LocalizationEngine& localization,
   {
     std::ofstream output(output_dir / "map_to_odom_status.json");
     output << "{\n";
+    output << "  \"map_version\": \"" << localization.static_map().version_label << "\",\n";
+    output << "  \"matcher\": \"" << result.matcher_name << "\",\n";
     output << "  \"score\": " << result.status.match_score << ",\n";
     output << "  \"iterations\": " << result.status.iterations << ",\n";
     output << "  \"converged\": " << (result.status.converged ? "true" : "false") << ",\n";
     output << "  \"failures\": " << result.status.consecutive_failures << ",\n";
     output << "  \"jump_m\": " << result.status.pose_jump_m << ",\n";
     output << "  \"jump_yaw_rad\": " << result.status.yaw_jump_rad << ",\n";
+    output << "  \"rejection_reason\": \"" << result.status.rejection_reason << "\",\n";
+    output << "  \"degraded_mode\": \"" << result.status.degraded_mode << "\",\n";
     output << "  \"relocalization_active\": "
            << (result.relocalization.active ? "true" : "false") << ",\n";
     output << "  \"relocalization_attempted\": "
@@ -1042,17 +1154,27 @@ void WriteDebugSnapshot(const localization::LocalizationEngine& localization,
   {
     std::ofstream output(output_dir / "planner_status.json");
     output << "{\n";
-    output << "  \"mode\": \""
-           << (planner_status.mode == planning::GoalMode::kCenterHold ? "center_hold"
-                                                                      : "approach_center")
-           << "\",\n";
+    output << "  \"mode\": \"" << ToString(planner_status.mode) << "\",\n";
+    output << "  \"map_version\": \"" << planner_status.map_version << "\",\n";
     output << "  \"distance_to_goal_m\": " << planner_status.distance_to_goal_m << ",\n";
     output << "  \"distance_to_center_m\": " << planner_status.distance_to_center_m << ",\n";
     output << "  \"yaw_error_rad\": " << planner_status.yaw_error_rad << ",\n";
+    output << "  \"global_plan_succeeded\": "
+           << (planner_status.global_plan_succeeded ? "true" : "false") << ",\n";
+    output << "  \"local_plan_succeeded\": "
+           << (planner_status.local_plan_succeeded ? "true" : "false") << ",\n";
     output << "  \"reached\": " << (planner_status.reached ? "true" : "false") << ",\n";
     output << "  \"settling\": " << (planner_status.settling ? "true" : "false") << ",\n";
     output << "  \"hold_drifted\": " << (planner_status.hold_drifted ? "true" : "false")
            << ",\n";
+    output << "  \"fallback_cmd_used\": "
+           << (planner_status.fallback_cmd_used ? "true" : "false") << ",\n";
+    output << "  \"temporary_goal_active\": "
+           << (planner_status.temporary_goal_active ? "true" : "false") << ",\n";
+    output << "  \"clearance_weight_scale\": " << planner_status.clearance_weight_scale
+           << ",\n";
+    output << "  \"degraded_mode\": \"" << planner_status.degraded_mode << "\",\n";
+    output << "  \"failure_reason\": \"" << planner_status.failure_reason << "\",\n";
     output << "  \"hold_frames_in_goal\": " << planner_status.hold_frames_in_goal << ",\n";
     output << "  \"hold_settle_elapsed_ns\": " << planner_status.hold_settle_elapsed_ns
            << ",\n";
@@ -1072,11 +1194,94 @@ void WriteDebugSnapshot(const localization::LocalizationEngine& localization,
            << planner_status.dwa_score.dynamic_integrated_risk << ",\n";
     output << "    \"dynamic_clearance_min\": "
            << planner_status.dwa_score.dynamic_clearance_min << ",\n";
+    output << "    \"dynamic_nearest_predicted_distance\": "
+           << planner_status.dwa_score.dynamic_nearest_predicted_distance << ",\n";
     output << "    \"dynamic_risk_05\": " << planner_status.dwa_score.dynamic_risk_05
            << ",\n";
     output << "    \"dynamic_risk_10\": " << planner_status.dwa_score.dynamic_risk_10 << ",\n";
+    output << "    \"dynamic_high_risk_penalty\": "
+           << planner_status.dwa_score.dynamic_high_risk_penalty << ",\n";
+    output << "    \"dynamic_crossing_penalty\": "
+           << planner_status.dwa_score.dynamic_crossing_penalty << ",\n";
+    output << "    \"dynamic_max_risk_level\": "
+           << planner_status.dwa_score.dynamic_max_risk_level << ",\n";
     output << "    \"total\": " << planner_status.dwa_score.total_score << "\n";
     output << "  }\n";
+    output << "}\n";
+  }
+  {
+    std::ofstream output(output_dir / "recovery_status.json");
+    output << "{\n";
+    output << "  \"active\": " << (recovery_status.active ? "true" : "false") << ",\n";
+    output << "  \"tier\": \"" << fsm::ToString(recovery_status.tier) << "\",\n";
+    output << "  \"cause\": \"" << fsm::ToString(recovery_status.cause) << "\",\n";
+    output << "  \"action\": \"" << fsm::ToString(recovery_status.action) << "\",\n";
+    output << "  \"strategy\": \"" << recovery_status.strategy << "\",\n";
+    output << "  \"detail\": \"" << recovery_status.detail << "\",\n";
+    output << "  \"failure_streak\": " << recovery_status.failure_streak << ",\n";
+    output << "  \"cycles_in_tier\": " << recovery_status.cycles_in_tier << ",\n";
+    output << "  \"clearance_weight_scale\": " << recovery_status.clearance_weight_scale
+           << ",\n";
+    output << "  \"requires_relocalization\": "
+           << (recovery_status.requires_relocalization ? "true" : "false") << ",\n";
+    output << "  \"cooldown_active\": "
+           << (recovery_status.cooldown_active ? "true" : "false") << ",\n";
+    output << "  \"complete\": " << (recovery_status.complete ? "true" : "false") << ",\n";
+    output << "  \"exhausted\": " << (recovery_status.exhausted ? "true" : "false") << ",\n";
+    output << "  \"temporary_goal_valid\": "
+           << (recovery_status.temporary_goal_valid ? "true" : "false") << ",\n";
+    output << "  \"temporary_goal\": {\"x\": " << recovery_status.temporary_goal.position.x
+           << ", \"y\": " << recovery_status.temporary_goal.position.y << ", \"yaw\": "
+           << recovery_status.temporary_goal.rpy.z << "},\n";
+    output << "  \"cmd\": {\"vx\": " << recovery_status.command.vx_mps << ", \"vy\": "
+           << recovery_status.command.vy_mps << ", \"wz\": " << recovery_status.command.wz_radps
+           << ", \"brake\": " << (recovery_status.command.brake ? "true" : "false") << "}\n";
+    output << "}\n";
+  }
+  {
+    std::ofstream output(output_dir / "safety_gate_status.json");
+    output << "{\n";
+    output << "  \"state\": \"" << safety::ToString(safety_result.state) << "\",\n";
+    output << "  \"authority\": \"" << safety::ToString(safety_result.authority) << "\",\n";
+    output << "  \"gate_reason\": \"" << safety::ToString(safety_result.gate_reason) << "\",\n";
+    output << "  \"gate_limited\": " << (safety_result.gate_limited ? "true" : "false")
+           << ",\n";
+    output << "  \"event_message\": \"" << safety_result.event.message << "\",\n";
+    output << "  \"communication_ok\": " << (safety_result.communication_ok ? "true" : "false")
+           << ",\n";
+    output << "  \"chassis_feedback_ok\": "
+           << (safety_result.chassis_feedback_ok ? "true" : "false") << ",\n";
+    output << "  \"costmap_valid\": " << (safety_result.costmap_valid ? "true" : "false")
+           << ",\n";
+    output << "  \"costmap_fresh\": " << (safety_result.costmap_fresh ? "true" : "false")
+           << ",\n";
+    output << "  \"localization_quality_ok\": "
+           << (safety_result.localization_quality_ok ? "true" : "false") << ",\n";
+    output << "  \"planner_status_ok\": "
+           << (safety_result.planner_status_ok ? "true" : "false") << ",\n";
+    output << "  \"mode_transition_active\": "
+           << (safety_result.mode_transition_active ? "true" : "false") << ",\n";
+    output << "  \"planner_cmd_timed_out\": "
+           << (safety_result.planner_cmd_timed_out ? "true" : "false") << ",\n";
+    output << "  \"obstacle_too_close\": "
+           << (safety_result.obstacle_too_close ? "true" : "false") << ",\n";
+    output << "  \"allow_cmd\": {\"vx\": " << safety_result.allow_cmd.vx_mps << ", \"vy\": "
+           << safety_result.allow_cmd.vy_mps << ", \"wz\": " << safety_result.allow_cmd.wz_radps
+           << ", \"brake\": " << (safety_result.allow_cmd.brake ? "true" : "false") << "},\n";
+    output << "  \"limited_cmd\": {\"vx\": " << safety_result.limited_cmd.vx_mps << ", \"vy\": "
+           << safety_result.limited_cmd.vy_mps << ", \"wz\": "
+           << safety_result.limited_cmd.wz_radps << ", \"brake\": "
+           << (safety_result.limited_cmd.brake ? "true" : "false") << "},\n";
+    output << "  \"freeze_cmd\": {\"vx\": " << safety_result.freeze_cmd.vx_mps << ", \"vy\": "
+           << safety_result.freeze_cmd.vy_mps << ", \"wz\": " << safety_result.freeze_cmd.wz_radps
+           << ", \"brake\": " << (safety_result.freeze_cmd.brake ? "true" : "false") << "},\n";
+    output << "  \"failsafe_cmd\": {\"vx\": " << safety_result.failsafe_cmd.vx_mps
+           << ", \"vy\": " << safety_result.failsafe_cmd.vy_mps << ", \"wz\": "
+           << safety_result.failsafe_cmd.wz_radps << ", \"brake\": "
+           << (safety_result.failsafe_cmd.brake ? "true" : "false") << "},\n";
+    output << "  \"final_cmd\": {\"vx\": " << safety_result.gated_cmd.vx_mps << ", \"vy\": "
+           << safety_result.gated_cmd.vy_mps << ", \"wz\": " << safety_result.gated_cmd.wz_radps
+           << ", \"brake\": " << (safety_result.gated_cmd.brake ? "true" : "false") << "}\n";
     output << "}\n";
   }
   {
@@ -1392,7 +1597,41 @@ common::Status Runtime::ConfigurePipeline() {
   preprocess_config.self_mask_y_min_m = loaded_config_.sensors.lidar_self_mask.y_min_m;
   preprocess_config.self_mask_y_max_m = loaded_config_.sensors.lidar_self_mask.y_max_m;
   perception::LocalCostmapConfig local_costmap_config;
+  local_costmap_config.width = loaded_config_.costmap.width;
+  local_costmap_config.height = loaded_config_.costmap.height;
+  local_costmap_config.resolution_m =
+      static_cast<float>(loaded_config_.costmap.resolution_m);
+  local_costmap_config.obstacle_layer_height_m =
+      static_cast<float>(loaded_config_.costmap.obstacle_layer_height_m);
+  local_costmap_config.inflation_radius_m =
+      static_cast<float>(loaded_config_.costmap.inflation_radius_m);
+  local_costmap_config.dynamic_obstacle_inflation_m =
+      static_cast<float>(loaded_config_.costmap.dynamic_obstacle_inflation_m);
   status = local_costmap_builder_.Configure(local_costmap_config);
+  if (!status.ok()) {
+    return status;
+  }
+  perception::MotConfig mot_config;
+  mot_config.cluster_tolerance_m = static_cast<float>(loaded_config_.mot.cluster_tolerance_m);
+  mot_config.min_cluster_points = loaded_config_.mot.min_cluster_points;
+  mot_config.max_cluster_points = loaded_config_.mot.max_cluster_points;
+  mot_config.roi_radius_m = static_cast<float>(loaded_config_.mot.roi_radius_m);
+  mot_config.reduced_roi_radius_m =
+      static_cast<float>(loaded_config_.mot.reduced_roi_radius_m);
+  mot_config.association_distance_m =
+      static_cast<float>(loaded_config_.mot.association_distance_m);
+  mot_config.max_missed_frames = loaded_config_.mot.max_missed_frames;
+  mot_config.process_noise = static_cast<float>(loaded_config_.mot.process_noise);
+  mot_config.measurement_noise = static_cast<float>(loaded_config_.mot.measurement_noise);
+  mot_config.initial_confidence = static_cast<float>(loaded_config_.mot.initial_confidence);
+  mot_config.confirmation_confidence =
+      static_cast<float>(loaded_config_.mot.confirmation_confidence);
+  mot_config.clustering_budget_ms = loaded_config_.mot.clustering_budget_ms;
+  status = mot_manager_.Configure(mot_config);
+  if (!status.ok()) {
+    return status;
+  }
+  status = recovery_planner_.Configure(loaded_config_.planner);
   if (!status.ok()) {
     return status;
   }
@@ -1934,7 +2173,17 @@ void Runtime::PlannerThreadMain() {
       const auto costmap = local_costmap_builder_.LatestCostmap();
       const auto obstacles = mot_manager_.LatestObstacles();
       if (pose.is_valid && costmap.width != 0U) {
-        planner_.PlanAndPublish(pose, costmap, obstacles.obstacles);
+        planning::PlanningOverrides planning_overrides;
+        const planning::PlanningOverrides* overrides = nullptr;
+        if (fsm_snapshot.recovery_active) {
+          const auto recovery_status = latest_recovery_status_.ReadSnapshot();
+          planning_overrides.clearance_weight_scale =
+              std::max(1.0F, recovery_status.clearance_weight_scale);
+          planning_overrides.temporary_goal = recovery_status.temporary_goal;
+          planning_overrides.temporary_goal_valid = recovery_status.temporary_goal_valid;
+          overrides = &planning_overrides;
+        }
+        planner_.PlanAndPublish(pose, costmap, obstacles.obstacles, overrides);
         planner_latency_ns_.store(planner_.LatestStatus().planning_latency_ns,
                                   std::memory_order_release);
         planned_cycles_.fetch_add(1, std::memory_order_relaxed);
@@ -2029,10 +2278,20 @@ void Runtime::SafetyThreadMain() {
     safety_input.navigation_requested =
         snapshot.mapping_active || snapshot.localization_active || snapshot.center_hold_active ||
         snapshot.recovery_active;
+    safety_input.costmap_required = !snapshot.mapping_active;
+    safety_input.mode_transition_active = snapshot.state != snapshot.previous_state;
+    safety_input.force_failsafe = snapshot.failsafe_active;
     safety_input.planner_path_available =
         snapshot.mapping_active ? !waypoint_manager_.empty() : planner_status.path_available;
+    safety_input.planner_global_plan_succeeded =
+        snapshot.mapping_active || planner_status.global_plan_succeeded;
+    safety_input.planner_local_plan_succeeded =
+        snapshot.mapping_active || planner_status.local_plan_succeeded;
     safety_input.localization_degraded =
         !snapshot.mapping_active && fsm_context.localization_degraded;
+    safety_input.localization_pose_trusted =
+        snapshot.mapping_active || localization_result.status.pose_trusted;
+    safety_input.localization_match_score = localization_result.status.match_score;
     safety_input.planner_failed = !snapshot.mapping_active && fsm_context.planner_failed;
     safety_input.goal_reached = !snapshot.mapping_active && planner_status.reached;
     safety_input.mission_timeout_enabled = !snapshot.mapping_active;
@@ -2053,29 +2312,22 @@ void Runtime::SafetyThreadMain() {
     auto safety_status = safety_manager_.Evaluate(safety_input, &safety_result);
     if (!safety_status.ok()) {
       safety_result = {};
+      safety_result.authority = safety::SafetyCommandAuthority::kFailsafe;
       safety_result.gated_cmd.stamp = now;
       safety_result.gated_cmd.brake = true;
+      safety_result.failsafe_cmd = safety_result.gated_cmd;
       safety_result.has_event = true;
       safety_result.event.stamp = now;
       safety_result.event.code = data::SafetyEventCode::kFailsafeOverride;
       safety_result.event.severity = data::SafetySeverity::kCritical;
       safety_result.event.message = "safety manager evaluation failed";
     }
-    if (snapshot.failsafe_active) {
-      safety_result.gated_cmd = {};
-      safety_result.gated_cmd.stamp = now;
-      safety_result.gated_cmd.brake = true;
-      safety_result.has_event = true;
-      safety_result.event.stamp = now;
-      safety_result.event.code = data::SafetyEventCode::kFailsafeOverride;
-      safety_result.event.severity = data::SafetySeverity::kCritical;
-      safety_result.event.message = "fsm forced chassis command override";
-    }
 
     if (safety_result.has_event && !SafetyEventEquals(last_event, safety_result.event)) {
       latest_safety_event_.Publish(safety_result.event);
       last_event = safety_result.event;
     }
+    latest_safety_result_.Publish(safety_result);
 
     if (safety_result.gated_cmd.stamp != last_cmd.stamp ||
         safety_result.gated_cmd.brake != last_cmd.brake ||
@@ -2106,6 +2358,11 @@ void Runtime::DebugThreadMain() {
     if (now >= next_log) {
       std::ostringstream stream;
       const auto fsm_snapshot = fsm_snapshot_.ReadSnapshot();
+      const auto localization_result = localization_.LatestResult();
+      const auto planner_status = planner_.LatestStatus();
+      const auto safety_result = latest_safety_result_.ReadSnapshot();
+      const auto recovery_status = latest_recovery_status_.ReadSnapshot();
+      const auto planner_cmd = planner_.LatestCmd();
       stream << "pipeline stats lidar=" << driver_lidar_frames_.load()
              << " imu=" << driver_imu_packets_.load()
              << " sync=" << synced_frames_.load()
@@ -2121,7 +2378,9 @@ void Runtime::DebugThreadMain() {
              << " dropped(localization/preprocess)="
              << localization_.dropped_frames() << '/' << preprocess_.dropped_frames()
              << " fsm(state=" << fsm::ToString(fsm_snapshot.state)
-             << ", event=" << fsm::ToString(fsm_snapshot.last_event.code) << ")";
+             << ", event=" << fsm::ToString(fsm_snapshot.last_event.code)
+             << ", map=" << CurrentMapLabel(fsm_snapshot.mapping_active, localization_.static_map())
+             << ")";
       if (fsm_snapshot.mapping_active) {
         const auto mapping_result = mapping_engine_.LatestResult();
         const auto pose = mapping_pose_.ReadSnapshot();
@@ -2135,19 +2394,44 @@ void Runtime::DebugThreadMain() {
                << ", cmd=" << cmd.vx_mps << "/" << cmd.vy_mps << "/" << cmd.wz_radps
                << ")";
       } else if (fsm_snapshot.localization_active) {
-        const auto localization_result = localization_.LatestResult();
-        const auto planner_status = planner_.LatestStatus();
-        stream << " loc(score=" << localization_result.status.match_score
+        stream << " loc(matcher=" << localization_result.matcher_name
+               << ", score=" << localization_result.status.match_score
                << ", iter=" << localization_result.status.iterations
                << ", fail=" << localization_result.status.consecutive_failures
                << ", trusted=" << (localization_result.status.pose_trusted ? "true" : "false")
+               << ", reject=" << localization_result.status.rejection_reason
+               << ", relocal=" << ToString(localization_result.relocalization.phase)
+               << "/"
+               << (localization_result.relocalization.succeeded
+                       ? "success"
+                       : (localization_result.relocalization.attempted ? "failed" : "idle"))
                << ", map=" << (localization_.map_loaded() ? "loaded" : "missing") << ")"
-               << " nav(mode="
-               << (planner_status.mode == planning::GoalMode::kCenterHold ? "hold" : "goto")
+               << " nav(mode=" << ToString(planner_status.mode)
                << ", dist=" << planner_status.distance_to_goal_m
                << ", reached=" << (planner_status.reached ? "true" : "false")
-               << ", cmd=" << planner_.LatestCmd().vx_mps << "/" << planner_.LatestCmd().vy_mps
-               << "/" << planner_.LatestCmd().wz_radps << ")";
+               << ", global=" << (planner_status.global_plan_succeeded ? "ok" : "fail")
+               << ", local=" << (planner_status.local_plan_succeeded ? "ok" : "fail")
+               << ", temp_goal=" << (planner_status.temporary_goal_active ? "true" : "false")
+               << ", clearance_scale=" << planner_status.clearance_weight_scale
+               << ", reason=" << planner_status.failure_reason
+               << ", cmd=" << planner_cmd.vx_mps << "/" << planner_cmd.vy_mps << "/"
+               << planner_cmd.wz_radps << ")"
+               << " safety(state=" << safety::ToString(safety_result.state)
+               << ", authority=" << safety::ToString(safety_result.authority)
+               << ", gate=" << safety::ToString(safety_result.gate_reason)
+               << ", limited=" << (safety_result.gate_limited ? "true" : "false")
+               << ", reason=" << SafetyGateReasonSummary(safety_result) << ")"
+               << " recovery(tier=" << fsm::ToString(recovery_status.tier)
+               << ", cause=" << fsm::ToString(recovery_status.cause)
+               << ", action=" << fsm::ToString(recovery_status.action)
+               << ", strategy=" << recovery_status.strategy << ")"
+               << " why(no_move="
+               << WhyRobotNotMoving(fsm_snapshot, localization_result, planner_status,
+                                    safety_result)
+               << ", slow="
+               << WhyRobotSlowing(fsm_snapshot, planner_status, safety_result) << ")"
+               << " degrade="
+               << CurrentDegradedSummary(localization_result, planner_status, safety_result);
       }
       stream << " perf(sync_ms="
              << static_cast<double>(sync_process_latency_ns_.load(std::memory_order_acquire)) /
@@ -2294,7 +2578,9 @@ void Runtime::DebugThreadMain() {
           next_pointcloud_publish = now + pointcloud_period;
           const auto publish_begin_ns = common::NowNs();
           auto current_pose = localization_.LatestResult().map_to_base;
-          WriteDebugSnapshot(localization_, planner_, RuntimeDebugOutputDir());
+          WriteDebugSnapshot(localization_, planner_, latest_recovery_status_.ReadSnapshot(),
+                             latest_safety_result_.ReadSnapshot(),
+                             RuntimeDebugOutputDir());
           const auto costmap_scene_json = BuildSceneUpdateJson(
               "runtime_local_costmap", tf::kMapFrame,
               CostmapOccupiedPoints(local_costmap_builder_.LatestCostmap(), 1200U), 0.10F, 0.04F,
@@ -2484,16 +2770,33 @@ fsm::NavFsmContext Runtime::BuildFsmContext(bool referee_changed) const {
   if (context.combat_ready) {
     const auto localization_result = localization_.LatestResult();
     const auto planner_status = planner_.LatestStatus();
+    const auto safety_result = latest_safety_result_.ReadSnapshot();
+    const auto recovery_status = latest_recovery_status_.ReadSnapshot();
     const auto latest_cmd = planner_.LatestCmd();
+    context.map_label = CurrentMapLabel(false, localization_.static_map());
+    context.localization_matcher = localization_.CurrentMatcherLabel();
+    context.localization_reason =
+        localization_result.status.pose_trusted ? "none" : localization_result.status.rejection_reason;
+    context.planner_reason = planner_status.failure_reason;
+    context.safety_reason = SafetyGateReasonSummary(safety_result);
+    context.degraded_mode =
+        CurrentDegradedSummary(localization_result, planner_status, safety_result);
+    context.recovery_tier = recovery_status.tier;
+    context.recovery_cause = recovery_status.cause;
+    context.recovery_action = recovery_status.action;
+    context.recovery_complete = recovery_status.complete;
+    context.recovery_exhausted = recovery_status.exhausted;
+    context.recovery_needs_relocalization = recovery_status.requires_relocalization;
+    context.recovery_strategy = recovery_status.strategy;
     context.localization_degraded =
         localization_result.map_to_base.is_valid &&
         (!localization_result.status.pose_trusted ||
          localization_result.status.consecutive_failures >=
              static_cast<std::uint32_t>(
                  std::max(1, loaded_config_.localization.relocalization_failure_threshold)));
-    context.planner_failed =
-        planned_cycles_.load(std::memory_order_relaxed) > 0U &&
-        (!planner_status.reached && !planner_status.path_available);
+    context.planner_failed = planned_cycles_.load(std::memory_order_relaxed) > 0U &&
+                             (planner_status.failure_reason != "none" ||
+                              (!planner_status.reached && !planner_status.path_available));
     if (latest_cmd.stamp != common::TimePoint{}) {
       const auto cmd_age_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                                   common::Now() - latest_cmd.stamp)
@@ -2520,13 +2823,16 @@ fsm::NavFsmContext Runtime::BuildFsmContext(bool referee_changed) const {
         }
       }
     }
+  } else {
+    context.map_label = CurrentMapLabel(mapping_mode_, localization_.static_map());
+    context.localization_matcher = localization_.CurrentMatcherLabel();
   }
 
   return context;
 }
 
 data::ChassisCmd Runtime::SelectCommandCandidate(const fsm::NavFsmSnapshot& snapshot,
-                                                 common::TimePoint stamp) const {
+                                                 common::TimePoint stamp) {
   data::ChassisCmd candidate_cmd;
   candidate_cmd.stamp = stamp;
   candidate_cmd.brake = true;
@@ -2550,23 +2856,59 @@ data::ChassisCmd Runtime::SelectCommandCandidate(const fsm::NavFsmSnapshot& snap
         break;
       }
       const auto localization_result = localization_.LatestResult();
-      if (localization_result.relocalization.active &&
-          localization_result.relocalization.recovery_action !=
-              localization::RelocalizationRecoveryAction::kNone) {
+      if (snapshot.recovery_active) {
+        const auto planner_status = planner_.LatestStatus();
+        const auto planner_path = planner_.LatestPath();
+        const auto planner_cmd = planner_.LatestCmd();
+        const auto costmap = local_costmap_builder_.LatestCostmap();
+        const auto obstacles = mot_manager_.LatestObstacles();
+        const auto current_pose = localization_result.map_to_base;
+        planning::RecoveryPlannerStatus recovery_status;
+        if (localization_result.relocalization.active &&
+            localization_result.relocalization.recovery_action !=
+                localization::RelocalizationRecoveryAction::kNone) {
+          recovery_status.active = true;
+          recovery_status.tier = fsm::RecoveryTier::kHeavy;
+          recovery_status.cause = fsm::RecoveryCause::kLocalizationLost;
+          recovery_status.action = fsm::RecoveryAction::kStopAndRelocalize;
+          recovery_status.requires_relocalization = true;
+          recovery_status.strategy = "l3_localization_override";
+          recovery_status.detail = ToString(localization_result.relocalization.recovery_action);
+          recovery_status.command =
+              ClampCommandForMode(localization_result.relocalization.recovery_cmd, snapshot,
+                                  loaded_config_, stamp);
+          latest_recovery_status_.Publish(recovery_status);
+          candidate_cmd = recovery_status.command;
+        } else {
+          planning::RecoveryPlannerInput recovery_input;
+          recovery_input.stamp = stamp;
+          recovery_input.current_pose = &current_pose;
+          recovery_input.global_path = &planner_path;
+          recovery_input.costmap = &costmap;
+          recovery_input.obstacles = &obstacles.obstacles;
+          recovery_input.localization_result = &localization_result;
+          recovery_input.planner_status = &planner_status;
+          recovery_input.nominal_cmd = &planner_cmd;
+          if (recovery_planner_.Plan(recovery_input, &candidate_cmd, &recovery_status).ok()) {
+            recovery_status.command =
+                ClampCommandForMode(candidate_cmd, snapshot, loaded_config_, stamp);
+            latest_recovery_status_.Publish(recovery_status);
+            candidate_cmd = recovery_status.command;
+          } else {
+            candidate_cmd = {};
+            candidate_cmd.stamp = stamp;
+            candidate_cmd.brake = true;
+          }
+        }
+      } else if (localization_result.relocalization.active &&
+                 localization_result.relocalization.recovery_action !=
+                     localization::RelocalizationRecoveryAction::kNone) {
         candidate_cmd =
             ClampCommandForMode(localization_result.relocalization.recovery_cmd, snapshot,
                                 loaded_config_, stamp);
       } else {
         const auto planner_cmd = planner_.LatestCmd();
         candidate_cmd = ClampCommandForMode(planner_cmd, snapshot, loaded_config_, stamp);
-      }
-      if (snapshot.recovery_active &&
-          localization_result.relocalization.recovery_action ==
-              localization::RelocalizationRecoveryAction::kNone) {
-        candidate_cmd.vx_mps *= static_cast<float>(loaded_config_.safety.recovery_speed_scale);
-        candidate_cmd.vy_mps *= static_cast<float>(loaded_config_.safety.recovery_speed_scale);
-        candidate_cmd.wz_radps *= static_cast<float>(loaded_config_.safety.recovery_yaw_scale);
-        candidate_cmd = ClampCommandForMode(candidate_cmd, snapshot, loaded_config_, stamp);
       }
       break;
     }
@@ -2576,6 +2918,11 @@ data::ChassisCmd Runtime::SelectCommandCandidate(const fsm::NavFsmSnapshot& snap
     case fsm::NavState::kModeSave:
     case fsm::NavState::kFailsafe:
       break;
+  }
+
+  if (!snapshot.recovery_active) {
+    recovery_planner_.Reset();
+    latest_recovery_status_.Publish(planning::RecoveryPlannerStatus{});
   }
 
   return candidate_cmd;

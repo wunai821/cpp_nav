@@ -59,6 +59,7 @@ common::Status LoopCorrectionGate::Evaluate(const config::MappingConfig& config,
   }
 
   if (consecutive_failures_before >= config.loop_correction_max_consecutive_failures) {
+    decision->auto_disabled = true;
     decision->reason = LoopCorrectionDecisionReason::kTooManyRecentFailures;
   } else if (match.status_code != common::StatusCode::kOk) {
     decision->reason = LoopCorrectionDecisionReason::kMatcherFailed;

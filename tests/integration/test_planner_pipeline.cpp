@@ -66,6 +66,20 @@ int main() {
   assert(std::fabs(path.points.back().position.y - custom_goal.position.y) < 0.25F);
   assert(!cmd.brake);
 
+  rm_nav::planning::PlanningOverrides overrides;
+  overrides.clearance_weight_scale = 1.8F;
+  overrides.temporary_goal = MakePose(2.4F, 4.4F, 0.0F);
+  overrides.temporary_goal_valid = true;
+  assert(planner.PlanToGoal(current_pose, custom_goal, costmap, {obstacle}, &path, &cmd,
+                            &overrides)
+             .ok());
+  const auto status = planner.LatestStatus();
+  assert(!path.points.empty());
+  assert(std::fabs(path.points.back().position.x - overrides.temporary_goal.position.x) < 0.25F);
+  assert(std::fabs(path.points.back().position.y - overrides.temporary_goal.position.y) < 0.25F);
+  assert(status.temporary_goal_active);
+  assert(status.clearance_weight_scale > 1.0F);
+
   std::cout << "test_planner_pipeline passed\n";
   return 0;
 }

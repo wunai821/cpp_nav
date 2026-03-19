@@ -37,7 +37,8 @@ int main() {
   assert(block.sample_count > 0U);
   assert(Near(block.delta_rpy.z, 0.1F, 0.02F));
   assert(Near(block.delta_velocity.x, 0.1F, 0.02F));
-  assert(block.delta_position.x > 0.0F);
+  assert(Near(block.delta_position.x, 0.005F, 0.003F));
+  assert(std::fabs(block.delta_position.y) < 0.002F);
 
   std::cout << "test_preintegration passed\n";
   return 0;

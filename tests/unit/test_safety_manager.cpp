@@ -54,6 +54,10 @@ rm_nav::safety::SafetyInput MakeBaseInput(rm_nav::common::TimePoint stamp,
   input.arming_ready = true;
   input.navigation_requested = true;
   input.planner_path_available = true;
+  input.planner_global_plan_succeeded = true;
+  input.planner_local_plan_succeeded = true;
+  input.localization_pose_trusted = true;
+  input.localization_match_score = 1.0F;
   input.last_communication_rx_ns = rm_nav::common::ToNanoseconds(stamp);
   input.last_chassis_feedback_stamp = stamp;
   input.current_pose = pose;
@@ -70,6 +74,8 @@ int main() {
   rm_nav::config::SafetyConfig config;
   config.heartbeat_timeout_ms = 100;
   config.deadman_timeout_ms = 100;
+  config.costmap_timeout_ms = 120;
+  config.mode_transition_freeze_ms = 100;
   config.hold_timeout_ms = 250;
   config.planner_fail_timeout_ms = 250;
   config.localization_fail_timeout_ms = 150;
@@ -98,6 +104,7 @@ int main() {
     rm_nav::safety::SafetyResult result;
     assert(manager.Evaluate(input, &result).ok());
     assert(result.state == rm_nav::safety::SafetyState::kIdle);
+    assert(result.authority == rm_nav::safety::SafetyCommandAuthority::kFreeze);
     assert(result.gated_cmd.brake);
   }
 
@@ -113,6 +120,7 @@ int main() {
     rm_nav::safety::SafetyResult result;
     assert(manager.Evaluate(input, &result).ok());
     assert(result.state == rm_nav::safety::SafetyState::kArmed);
+    assert(result.authority == rm_nav::safety::SafetyCommandAuthority::kFreeze);
     assert(result.gated_cmd.brake);
   }
 
@@ -126,9 +134,12 @@ int main() {
     rm_nav::safety::SafetyResult result;
     assert(manager.Evaluate(input, &result).ok());
     assert(result.state == rm_nav::safety::SafetyState::kRunning);
+    assert(result.authority == rm_nav::safety::SafetyCommandAuthority::kLimited);
     assert(!result.gated_cmd.brake);
     assert(result.gated_cmd.vx_mps > 0.0F);
     assert(result.gated_cmd.vx_mps <= static_cast<float>(config.max_delta_v_per_tick) + 1.0e-5F);
+    assert(result.allow_cmd.vx_mps == cmd.vx_mps);
+    assert(result.limited_cmd.vx_mps == result.gated_cmd.vx_mps);
   }
 
   {
@@ -139,9 +150,11 @@ int main() {
 
     auto input = MakeBaseInput(stamp, &pose, &costmap, &cmd, &no_obstacles);
     input.localization_degraded = true;
+    input.localization_pose_trusted = false;
     rm_nav::safety::SafetyResult result;
     assert(manager.Evaluate(input, &result).ok());
     assert(result.state == rm_nav::safety::SafetyState::kHold);
+    assert(result.authority == rm_nav::safety::SafetyCommandAuthority::kFreeze);
     assert(result.gated_cmd.brake);
     assert(result.has_event);
     assert(result.event.code == rm_nav::data::SafetyEventCode::kPoseLost);
@@ -155,9 +168,11 @@ int main() {
 
     auto input = MakeBaseInput(stamp, &pose, &costmap, &cmd, &no_obstacles);
     input.localization_degraded = true;
+    input.localization_pose_trusted = false;
     rm_nav::safety::SafetyResult result;
     assert(manager.Evaluate(input, &result).ok());
     assert(result.state == rm_nav::safety::SafetyState::kFailsafe);
+    assert(result.authority == rm_nav::safety::SafetyCommandAuthority::kFailsafe);
     assert(result.gated_cmd.brake);
     assert(result.has_event);
   }
@@ -173,6 +188,7 @@ int main() {
     rm_nav::safety::SafetyResult result;
     assert(manager.Evaluate(input, &result).ok());
     assert(result.state == rm_nav::safety::SafetyState::kIdle);
+    assert(result.authority == rm_nav::safety::SafetyCommandAuthority::kFreeze);
   }
 
   {
@@ -187,6 +203,7 @@ int main() {
     rm_nav::safety::SafetyResult result;
     assert(manager.Evaluate(input, &result).ok());
     assert(result.state == rm_nav::safety::SafetyState::kArmed);
+    assert(result.authority == rm_nav::safety::SafetyCommandAuthority::kFreeze);
   }
 
   {
@@ -199,6 +216,8 @@ int main() {
     rm_nav::safety::SafetyResult result;
     assert(manager.Evaluate(input, &result).ok());
     assert(result.state == rm_nav::safety::SafetyState::kRunning);
+    assert(result.authority == rm_nav::safety::SafetyCommandAuthority::kLimited ||
+           result.authority == rm_nav::safety::SafetyCommandAuthority::kAllow);
   }
 
   {
@@ -211,6 +230,7 @@ int main() {
     rm_nav::safety::SafetyResult result;
     assert(manager.Evaluate(input, &result).ok());
     assert(result.state == rm_nav::safety::SafetyState::kHold);
+    assert(result.authority == rm_nav::safety::SafetyCommandAuthority::kFreeze);
     assert(result.gated_cmd.brake);
     assert(result.event.code == rm_nav::data::SafetyEventCode::kStaticCollision);
   }
@@ -241,9 +261,53 @@ int main() {
     rm_nav::safety::SafetyResult result;
     assert(manager.Evaluate(input, &result).ok());
     assert(result.state == rm_nav::safety::SafetyState::kFailsafe);
+    assert(result.authority == rm_nav::safety::SafetyCommandAuthority::kFailsafe);
     assert(result.gated_cmd.brake);
     assert(result.has_event);
     assert(result.event.code == rm_nav::data::SafetyEventCode::kSensorTimeout);
+  }
+
+  {
+    const auto stamp = base_time + std::chrono::milliseconds(800);
+    pose = MakePose(stamp);
+    costmap = MakeCostmap(stamp, false);
+    cmd = MakeMotionCmd(stamp);
+
+    auto input = MakeBaseInput(stamp, &pose, &costmap, &cmd, &no_obstacles);
+    input.mode_transition_active = true;
+    rm_nav::safety::SafetyResult result;
+    assert(manager.Evaluate(input, &result).ok());
+    assert(result.authority == rm_nav::safety::SafetyCommandAuthority::kFreeze);
+    assert(result.gate_reason == rm_nav::safety::CommandGateReason::kModeTransition);
+  }
+
+  {
+    const auto stamp = base_time + std::chrono::milliseconds(950);
+    pose = MakePose(stamp);
+    costmap = MakeCostmap(base_time + std::chrono::milliseconds(700), false);
+    cmd = MakeMotionCmd(stamp);
+
+    auto input = MakeBaseInput(stamp, &pose, &costmap, &cmd, &no_obstacles);
+    rm_nav::safety::SafetyResult result;
+    assert(manager.Evaluate(input, &result).ok());
+    assert(!result.costmap_fresh);
+    assert(result.authority == rm_nav::safety::SafetyCommandAuthority::kFreeze);
+    assert(result.gate_reason == rm_nav::safety::CommandGateReason::kCostmapStale);
+  }
+
+  {
+    const auto stamp = base_time + std::chrono::milliseconds(1000);
+    pose = MakePose(stamp);
+    costmap = MakeCostmap(stamp, false);
+    cmd = MakeMotionCmd(stamp);
+
+    auto input = MakeBaseInput(stamp, &pose, &costmap, &cmd, &no_obstacles);
+    input.force_failsafe = true;
+    rm_nav::safety::SafetyResult result;
+    assert(manager.Evaluate(input, &result).ok());
+    assert(result.state == rm_nav::safety::SafetyState::kFailsafe);
+    assert(result.authority == rm_nav::safety::SafetyCommandAuthority::kFailsafe);
+    assert(result.gate_reason == rm_nav::safety::CommandGateReason::kFailsafeOverride);
   }
 
   std::cout << "test_safety_manager passed\n";

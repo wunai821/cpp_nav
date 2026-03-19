@@ -88,7 +88,9 @@ bool CollisionChecker::DynamicCollisionAhead(
             std::cos(pose.rpy.z) * sample.second;
         const float dx = predicted_pose.position.x - world_x;
         const float dy = predicted_pose.position.y - world_y;
-        const float clearance = std::sqrt(dx * dx + dy * dy) - obstacle.radius_m;
+        const float predicted_radius =
+            std::max(obstacle.radius_m, obstacle.predicted_radius_m);
+        const float clearance = std::sqrt(dx * dx + dy * dy) - predicted_radius;
         if (clearance <= static_cast<float>(config.emergency_stop_distance_m)) {
           return true;
         }

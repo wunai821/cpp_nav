@@ -7,6 +7,14 @@
 namespace rm_nav::planning {
 namespace {
 
+struct DynamicSampleMetrics {
+  float risk{0.0F};
+  float clearance_min{10.0F};
+  float high_risk_penalty{0.0F};
+  float crossing_penalty{0.0F};
+  int max_risk_level{0};
+};
+
 float NormalizeAngle(float angle) {
   constexpr float kPi = 3.14159265358979323846F;
   while (angle > kPi) {
@@ -59,7 +67,8 @@ float DistanceToObstacleSet(const std::vector<data::DynamicObstacle>& obstacles,
   for (const auto& obstacle : obstacles) {
     const float dx = obstacle.pose.position.x - world_x;
     const float dy = obstacle.pose.position.y - world_y;
-    best = std::min(best, std::sqrt(dx * dx + dy * dy) - obstacle.radius_m);
+    best = std::min(best, std::sqrt(dx * dx + dy * dy) -
+                              std::max(obstacle.radius_m, obstacle.predicted_radius_m));
   }
   return best == std::numeric_limits<float>::max() ? 10.0F : best;
 }
@@ -92,25 +101,42 @@ data::Pose3f PredictObstaclePose(const data::DynamicObstacle& obstacle, float t_
   return pose;
 }
 
-float DynamicClearanceAtTime(const std::vector<data::DynamicObstacle>& obstacles, float world_x,
-                             float world_y, float t_s, float inflation_m) {
-  float best_clearance = std::numeric_limits<float>::max();
-  for (const auto& obstacle : obstacles) {
-    const auto predicted_pose = PredictObstaclePose(obstacle, t_s);
-    const float dx = predicted_pose.position.x - world_x;
-    const float dy = predicted_pose.position.y - world_y;
-    const float clearance =
-        std::sqrt(dx * dx + dy * dy) - (obstacle.radius_m + inflation_m);
-    best_clearance = std::min(best_clearance, clearance);
+int RiskLevelValue(data::DynamicObstacleRiskLevel risk_level) {
+  switch (risk_level) {
+    case data::DynamicObstacleRiskLevel::kHigh:
+      return 2;
+    case data::DynamicObstacleRiskLevel::kMedium:
+      return 1;
+    default:
+      return 0;
   }
-  return best_clearance == std::numeric_limits<float>::max() ? 10.0F : best_clearance;
 }
 
-float DynamicRiskAtTime(const std::vector<data::DynamicObstacle>& obstacles, float world_x,
-                        float world_y, float robot_world_vx, float robot_world_vy, float t_s,
-                        const config::PlannerConfig& config) {
+float RiskLevelWeight(data::DynamicObstacleRiskLevel risk_level) {
+  switch (risk_level) {
+    case data::DynamicObstacleRiskLevel::kHigh:
+      return 1.45F;
+    case data::DynamicObstacleRiskLevel::kMedium:
+      return 1.0F;
+    default:
+      return 0.7F;
+  }
+}
+
+float PredictionRadiusAtTime(const data::DynamicObstacle& obstacle, float t_s) {
+  const float predicted_radius =
+      obstacle.predicted_radius_m > 0.0F ? obstacle.predicted_radius_m : obstacle.radius_m;
+  const float alpha = std::clamp(t_s, 0.0F, 1.0F);
+  return obstacle.radius_m + alpha * (predicted_radius - obstacle.radius_m);
+}
+
+DynamicSampleMetrics EvaluateDynamicSample(const std::vector<data::DynamicObstacle>& obstacles,
+                                           float world_x, float world_y, float robot_world_vx,
+                                           float robot_world_vy, float t_s,
+                                           const config::PlannerConfig& config) {
+  DynamicSampleMetrics metrics;
   if (obstacles.empty()) {
-    return 0.0F;
+    return metrics;
   }
 
   const float influence_distance =
@@ -123,17 +149,30 @@ float DynamicRiskAtTime(const std::vector<data::DynamicObstacle>& obstacles, flo
   float total_risk = 0.0F;
   for (const auto& obstacle : obstacles) {
     const auto predicted_pose = PredictObstaclePose(obstacle, t_s);
+    const float prediction_radius = PredictionRadiusAtTime(obstacle, t_s);
     const float dx = predicted_pose.position.x - world_x;
     const float dy = predicted_pose.position.y - world_y;
     const float distance = std::sqrt(dx * dx + dy * dy);
-    const float clearance = distance - (obstacle.radius_m + inflation_m);
+    const float clearance = distance - (prediction_radius + inflation_m);
+    metrics.clearance_min = std::min(metrics.clearance_min, clearance);
+    if (clearance < influence_distance) {
+      metrics.max_risk_level = std::max(metrics.max_risk_level, RiskLevelValue(obstacle.risk_level));
+    }
     if (clearance <= 0.0F) {
-      return 10.0F;
+      metrics.risk = 10.0F;
+      metrics.high_risk_penalty = 10.0F;
+      metrics.crossing_penalty = 10.0F;
+      metrics.max_risk_level = std::max(metrics.max_risk_level, RiskLevelValue(obstacle.risk_level));
+      return metrics;
     }
     if (clearance >= influence_distance) {
       continue;
     }
 
+    const float risk_weight = RiskLevelWeight(obstacle.risk_level) *
+                              std::clamp(obstacle.risk_score > 0.0F ? 0.5F + obstacle.risk_score
+                                                                     : 0.5F + obstacle.confidence,
+                                         0.35F, 1.6F);
     const float confidence =
         std::clamp(obstacle.is_confirmed ? std::max(obstacle.confidence, 0.6F)
                                          : std::max(obstacle.confidence, 0.25F),
@@ -153,10 +192,38 @@ float DynamicRiskAtTime(const std::vector<data::DynamicObstacle>& obstacles, flo
       const float ratio = (influence_distance - clearance) / denom;
       risk = ratio * ratio;
     }
-    risk *= confidence * (1.0F + 0.5F * closing_speed);
+    risk *= confidence * risk_weight * (1.0F + 0.5F * closing_speed);
     total_risk += risk;
+
+    if (obstacle.risk_level == data::DynamicObstacleRiskLevel::kHigh) {
+      metrics.high_risk_penalty += risk_weight *
+                                   ((influence_distance - clearance) /
+                                    std::max(influence_distance, 0.05F));
+    }
+
+    const float robot_speed = std::sqrt(robot_world_vx * robot_world_vx + robot_world_vy * robot_world_vy);
+    const float obstacle_speed =
+        std::sqrt(obstacle.velocity.x * obstacle.velocity.x + obstacle.velocity.y * obstacle.velocity.y);
+    if (robot_speed > 0.05F && obstacle_speed > 0.05F) {
+      const float robot_dir_x = robot_world_vx / robot_speed;
+      const float robot_dir_y = robot_world_vy / robot_speed;
+      const float obstacle_dir_x = obstacle.velocity.x / obstacle_speed;
+      const float obstacle_dir_y = obstacle.velocity.y / obstacle_speed;
+      const float cross_mag = std::fabs(robot_dir_x * obstacle_dir_y - robot_dir_y * obstacle_dir_x);
+      const float closing_ratio =
+          std::clamp(closing_speed / std::max(robot_speed + obstacle_speed, 0.1F), 0.0F, 1.0F);
+      const float crossing_window = std::max(emergency_distance * 1.5F, 0.3F);
+      const float emergency_ratio =
+          std::clamp((crossing_window - clearance) / crossing_window, 0.0F, 1.0F);
+      metrics.crossing_penalty +=
+          risk_weight * cross_mag * (0.5F + closing_ratio) * emergency_ratio;
+    }
   }
-  return std::min(total_risk, 10.0F);
+  metrics.risk = std::min(total_risk, 10.0F);
+  if (metrics.clearance_min == std::numeric_limits<float>::max()) {
+    metrics.clearance_min = 10.0F;
+  }
+  return metrics;
 }
 
 float SampleValue(int sample_index, int total_samples, float max_abs) {
@@ -175,10 +242,12 @@ common::Status OmniDwa::Plan(const data::Pose3f& current_pose, const GoalState& 
                              const data::GridMap2D& local_costmap,
                              const std::vector<data::DynamicObstacle>& obstacles,
                              const data::ChassisCmd& previous_cmd, data::ChassisCmd* cmd,
-                             DwaScore* score) const {
+                             DwaScore* score, float clearance_weight_scale) const {
   if (cmd == nullptr || score == nullptr) {
     return common::Status::InvalidArgument("dwa output is null");
   }
+  const float effective_clearance_weight_scale =
+      std::max(0.1F, clearance_weight_scale);
 
   const float max_vx = static_cast<float>(
       goal.mode == GoalMode::kCenterHold ? config_.hold_max_v_mps : config_.max_vx_mps);
@@ -204,7 +273,10 @@ common::Status OmniDwa::Plan(const data::Pose3f& current_pose, const GoalState& 
         bool collision = false;
         float integrated_dynamic_risk = 0.0F;
         float max_dynamic_risk = 0.0F;
+        float integrated_high_risk_penalty = 0.0F;
+        float integrated_crossing_penalty = 0.0F;
         float min_dynamic_clearance = std::numeric_limits<float>::max();
+        int max_dynamic_risk_level = 0;
         for (double t = config_.dwa_dt_s; t <= config_.dwa_horizon_s + 1.0e-6;
              t += config_.dwa_dt_s) {
           local_x += (vx * std::cos(local_yaw) - vy * std::sin(local_yaw)) *
@@ -220,16 +292,19 @@ common::Status OmniDwa::Plan(const data::Pose3f& current_pose, const GoalState& 
           const float future_world_y = current_pose.position.y + local_y;
           const float robot_world_vx = vx * std::cos(local_yaw) - vy * std::sin(local_yaw);
           const float robot_world_vy = vx * std::sin(local_yaw) + vy * std::cos(local_yaw);
-          const float risk_here = DynamicRiskAtTime(
+          const auto sample_metrics = EvaluateDynamicSample(
               obstacles, future_world_x, future_world_y, robot_world_vx, robot_world_vy,
               static_cast<float>(t), config_);
-          const float dynamic_clearance = DynamicClearanceAtTime(
-              obstacles, future_world_x, future_world_y, static_cast<float>(t),
-              static_cast<float>(config_.dynamic_inflation_m));
-          integrated_dynamic_risk += risk_here * static_cast<float>(config_.dwa_dt_s);
-          max_dynamic_risk = std::max(max_dynamic_risk, risk_here);
-          min_dynamic_clearance = std::min(min_dynamic_clearance, dynamic_clearance);
-          if (risk_here >= 10.0F || dynamic_clearance <= 0.0F) {
+          integrated_dynamic_risk += sample_metrics.risk * static_cast<float>(config_.dwa_dt_s);
+          integrated_high_risk_penalty +=
+              sample_metrics.high_risk_penalty * static_cast<float>(config_.dwa_dt_s);
+          integrated_crossing_penalty +=
+              sample_metrics.crossing_penalty * static_cast<float>(config_.dwa_dt_s);
+          max_dynamic_risk = std::max(max_dynamic_risk, sample_metrics.risk);
+          min_dynamic_clearance = std::min(min_dynamic_clearance, sample_metrics.clearance_min);
+          max_dynamic_risk_level =
+              std::max(max_dynamic_risk_level, sample_metrics.max_risk_level);
+          if (sample_metrics.risk >= 10.0F || sample_metrics.clearance_min <= 0.0F) {
             collision = true;
             break;
           }
@@ -253,15 +328,21 @@ common::Status OmniDwa::Plan(const data::Pose3f& current_pose, const GoalState& 
         const float linear_speed = std::sqrt(vx * vx + vy * vy);
         const float heading_error = std::fabs(
             NormalizeAngle(DesiredHeading(goal, end_x, end_y) - local_yaw));
-        const float dynamic_risk_05 = DynamicRiskAtTime(
+        const auto sample_05 = EvaluateDynamicSample(
             obstacles, end_x, end_y, vx * std::cos(local_yaw) - vy * std::sin(local_yaw),
             vx * std::sin(local_yaw) + vy * std::cos(local_yaw), 0.5F, config_);
-        const float dynamic_risk_10 = DynamicRiskAtTime(
+        const auto sample_10 = EvaluateDynamicSample(
             obstacles, end_x, end_y, vx * std::cos(local_yaw) - vy * std::sin(local_yaw),
             vx * std::sin(local_yaw) + vy * std::cos(local_yaw), 1.0F, config_);
         const float dynamic_penalty =
-            0.45F * max_dynamic_risk + 0.25F * integrated_dynamic_risk +
-            0.20F * dynamic_risk_05 + 0.10F * dynamic_risk_10;
+            0.35F * max_dynamic_risk + 0.20F * integrated_dynamic_risk +
+            0.15F * sample_05.risk + 0.10F * sample_10.risk +
+            static_cast<float>(config_.dynamic_high_risk_penalty_scale) *
+                (0.15F * integrated_high_risk_penalty + 0.10F * sample_05.high_risk_penalty +
+                 0.05F * sample_10.high_risk_penalty) +
+            static_cast<float>(config_.dynamic_crossing_penalty_scale) *
+                (0.20F * integrated_crossing_penalty + 0.15F * sample_05.crossing_penalty +
+                 0.10F * sample_10.crossing_penalty);
 
         DwaScore candidate_score;
         candidate_score.goal_score = 10.0F * progress;
@@ -269,8 +350,9 @@ common::Status OmniDwa::Plan(const data::Pose3f& current_pose, const GoalState& 
         candidate_score.smooth_score = 0.4F / (0.2F + smooth_delta);
         candidate_score.heading_score = static_cast<float>(config_.weight_heading) *
                                         (0.8F / (0.2F + heading_error));
-        candidate_score.clearance_score = static_cast<float>(config_.weight_clearance) *
-                                          std::min(1.0F, obstacle_clearance);
+        candidate_score.clearance_score =
+            static_cast<float>(config_.weight_clearance) * effective_clearance_weight_scale *
+            std::min(1.0F, obstacle_clearance);
         candidate_score.velocity_score = static_cast<float>(config_.weight_velocity) *
                                          linear_speed;
         candidate_score.dynamic_risk_score =
@@ -280,8 +362,16 @@ common::Status OmniDwa::Plan(const data::Pose3f& current_pose, const GoalState& 
         candidate_score.dynamic_clearance_min =
             min_dynamic_clearance == std::numeric_limits<float>::max() ? 10.0F
                                                                        : min_dynamic_clearance;
-        candidate_score.dynamic_risk_05 = dynamic_risk_05;
-        candidate_score.dynamic_risk_10 = dynamic_risk_10;
+        candidate_score.dynamic_nearest_predicted_distance =
+            candidate_score.dynamic_clearance_min;
+        candidate_score.dynamic_risk_05 = sample_05.risk;
+        candidate_score.dynamic_risk_10 = sample_10.risk;
+        candidate_score.dynamic_high_risk_penalty =
+            integrated_high_risk_penalty + sample_05.high_risk_penalty + sample_10.high_risk_penalty;
+        candidate_score.dynamic_crossing_penalty =
+            integrated_crossing_penalty + sample_05.crossing_penalty + sample_10.crossing_penalty;
+        candidate_score.dynamic_max_risk_level = std::max(
+            max_dynamic_risk_level, std::max(sample_05.max_risk_level, sample_10.max_risk_level));
         candidate_score.total_score = candidate_score.goal_score +
                                       candidate_score.path_score +
                                       candidate_score.smooth_score +

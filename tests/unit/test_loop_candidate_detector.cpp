@@ -38,6 +38,7 @@ int main() {
   config.loop_candidate_distance_threshold_m = 1.0;
   config.loop_candidate_min_time_separation_s = 5.0;
   config.loop_candidate_max_yaw_delta_rad = 0.5;
+  config.loop_candidate_min_revisit_score = 0.35;
 
   const auto now = rm_nav::common::Now();
   std::vector<rm_nav::mapping::MappingKeyframe> keyframes;
@@ -56,6 +57,7 @@ int main() {
   assert(candidate.found);
   assert(candidate.frame_index == 10U);
   assert(candidate.keyframe_index == 0U);
+  assert(candidate.revisit_score >= 0.5F);
 
   status = detector.FindCandidate(config, MakePose(3.0F, 3.0F, 0.0F), now, 101U, keyframes,
                                   &candidate);

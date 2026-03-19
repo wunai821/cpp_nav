@@ -189,6 +189,10 @@ common::Status MappingEngine::Initialize(const config::MappingConfig& config) {
   if (!status.ok()) {
     return status;
   }
+  status = lio_frontend_.Configure(config);
+  if (!status.ok()) {
+    return status;
+  }
   status = projector_.Configure(config);
   if (!status.ok()) {
     return status;
@@ -213,9 +217,14 @@ common::Status MappingEngine::Update(
   if (!initialized_) {
     return common::Status::NotReady("mapping engine is not initialized");
   }
+  data::SyncedFrame frontend_frame;
+  auto status = lio_frontend_.PrepareFrame(frame, &frontend_frame);
+  if (!status.ok()) {
+    return status;
+  }
   bool pose_is_map_aligned = false;
   data::Pose3f frontend_pose;
-  auto status = ResolveMappingPose(frame, map_to_base, &frontend_pose, &pose_is_map_aligned);
+  status = ResolveMappingPose(frontend_frame, map_to_base, &frontend_pose, &pose_is_map_aligned);
   if (!status.ok()) {
     return status;
   }
@@ -223,7 +232,7 @@ common::Status MappingEngine::Update(
   const data::Pose3f corrected_map_to_base =
       pose_is_map_aligned ? frontend_pose : ApplyCorrection(frontend_pose);
   const auto begin_ns = common::NowNs();
-  status = builder_.Update(frame, corrected_map_to_base, known_dynamic_obstacles);
+  status = builder_.Update(frontend_frame, corrected_map_to_base, known_dynamic_obstacles);
   if (!status.ok()) {
     return status;
   }
@@ -231,17 +240,26 @@ common::Status MappingEngine::Update(
   latest_result_.accumulated_points = builder_.GlobalPoints().size();
   latest_result_.processed_frames = builder_.frame_count();
   latest_result_.processing_latency_ns = common::NowNs() - begin_ns;
-  status = loop_candidate_detector_.FindCandidate(config_, corrected_map_to_base, frame.stamp,
-                                                  frame.lidar.frame_index, keyframes_,
+  status = loop_candidate_detector_.FindCandidate(config_, corrected_map_to_base, frontend_frame.stamp,
+                                                  frontend_frame.lidar.frame_index, keyframes_,
                                                   &latest_loop_candidate_);
   if (!status.ok()) {
     return status;
   }
   latest_loop_match_ = {};
-  if (latest_loop_candidate_.found &&
+  const bool loop_correction_disabled =
+      consecutive_loop_correction_failures_ >=
+      std::max(1, config_.loop_correction_max_consecutive_failures);
+  if (latest_loop_candidate_.found && loop_correction_disabled) {
+    latest_loop_match_.candidate_found = true;
+    latest_loop_match_.keyframe_index = latest_loop_candidate_.keyframe_index;
+    latest_loop_match_.frame_index = latest_loop_candidate_.frame_index;
+    latest_loop_match_.status_code = common::StatusCode::kUnavailable;
+    latest_loop_match_.status_message = "loop correction auto-disabled after failures";
+  } else if (latest_loop_candidate_.found &&
       latest_loop_candidate_.keyframe_index < keyframes_.size()) {
     const auto& candidate_keyframe = keyframes_[latest_loop_candidate_.keyframe_index];
-    status = loop_closure_matcher_.Match(frame, corrected_map_to_base, candidate_keyframe,
+    status = loop_closure_matcher_.Match(frontend_frame, corrected_map_to_base, candidate_keyframe,
                                          latest_loop_candidate_, &latest_loop_match_);
     if (!status.ok()) {
       return status;
@@ -260,13 +278,14 @@ common::Status MappingEngine::Update(
     UpdateCorrectionTarget(frontend_pose, keyframes_[latest_loop_candidate_.keyframe_index],
                            latest_loop_correction_);
   }
-  RecordTrajectorySample(frame, map_to_base, latest_result_.predicted_pose, corrected_map_to_base);
-  if (ShouldCaptureKeyframe(frame, corrected_map_to_base)) {
-    CaptureKeyframe(frame, corrected_map_to_base);
+  RecordTrajectorySample(frontend_frame, map_to_base, latest_result_.predicted_pose,
+                         corrected_map_to_base);
+  if (ShouldCaptureKeyframe(frontend_frame, corrected_map_to_base)) {
+    CaptureKeyframe(frontend_frame, corrected_map_to_base);
   }
   previous_external_pose_ = map_to_base;
   previous_mapping_pose_ = corrected_map_to_base;
-  previous_scan_ = DownsampleLidarFrame(frame.lidar, config_.frontend_match_max_points);
+  previous_scan_ = DownsampleLidarFrame(frontend_frame.lidar, config_.frontend_match_max_points);
   has_previous_frontend_state_ = true;
   return common::Status::Ok();
 }
@@ -484,17 +503,38 @@ common::Status MappingEngine::ResolveMappingPose(const data::SyncedFrame& frame,
   }
 
   const auto begin_ns = common::NowNs();
-  const data::Pose3f predicted_pose =
-      has_previous_frontend_state_
-          ? PredictPoseFromExternalDelta(previous_external_pose_, previous_mapping_pose_,
-                                         external_pose, frame.preint)
-          : external_pose;
+  LioFrontendPrediction frontend_prediction;
+  if (has_previous_frontend_state_) {
+    auto status = lio_frontend_.PredictPose(previous_external_pose_, previous_mapping_pose_,
+                                            external_pose, frame.preint, &frontend_prediction);
+    if (!status.ok()) {
+      return status;
+    }
+  } else {
+    frontend_prediction.predicted_pose = external_pose;
+  }
+  const data::Pose3f predicted_pose = frontend_prediction.predicted_pose;
   latest_result_.predicted_pose = predicted_pose;
 
   localization::StaticMap local_map;
   data::Pose3f initial_guess = external_pose;
 
-  if (config_.pose_source == "scan_to_scan_icp") {
+  const bool scan_to_scan_mode =
+      config_.pose_source == "scan_to_scan_icp" ||
+      config_.pose_source == "lio_lite_scan_to_scan";
+  const bool scan_to_map_mode =
+      config_.pose_source == "scan_to_map_icp" ||
+      config_.pose_source == "lio_lite_scan_to_map";
+  const bool eskf_only_mode = config_.pose_source == "eskf_lite";
+  if (eskf_only_mode) {
+    latest_result_.frontend_latency_ns = common::NowNs() - begin_ns;
+    latest_result_.frontend_converged = frontend_prediction.used_imu_prediction;
+    *mapping_pose = predicted_pose;
+    *pose_is_map_aligned = true;
+    return common::Status::Ok();
+  }
+
+  if (scan_to_scan_mode) {
     if (!has_previous_frontend_state_ || previous_scan_.points.empty()) {
       latest_result_.frontend_fallback = true;
       latest_result_.frontend_latency_ns = common::NowNs() - begin_ns;
@@ -506,7 +546,10 @@ common::Status MappingEngine::ResolveMappingPose(const data::SyncedFrame& frame,
     local_map.global_map_loaded = true;
     latest_result_.frontend_reference_points = local_map.global_points.size();
     initial_guess = RelativePose2D(previous_external_pose_, external_pose);
-  } else if (config_.pose_source == "scan_to_map_icp") {
+    if (frontend_prediction.used_imu_prediction) {
+      initial_guess = RelativePose2D(previous_mapping_pose_, predicted_pose);
+    }
+  } else if (scan_to_map_mode) {
     local_map.global_points = BuildLocalSubmap(
         builder_.GlobalPoints(), predicted_pose,
         static_cast<float>(std::max(0.1, config_.frontend_submap_radius_m)),
@@ -548,7 +591,7 @@ common::Status MappingEngine::ResolveMappingPose(const data::SyncedFrame& frame,
     return common::Status::Ok();
   }
 
-  if (config_.pose_source == "scan_to_scan_icp") {
+  if (scan_to_scan_mode) {
     *mapping_pose = ComposePose2D(previous_mapping_pose_, match.matched_pose);
   } else {
     *mapping_pose = match.matched_pose;

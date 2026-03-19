@@ -15,6 +15,7 @@ struct StaticMap {
   std::vector<data::PointXYZI> global_points{};
   std::string occupancy_path{};
   std::string global_map_path{};
+  std::string version_label{"unknown"};
   bool occupancy_loaded{false};
   bool global_map_loaded{false};
 };

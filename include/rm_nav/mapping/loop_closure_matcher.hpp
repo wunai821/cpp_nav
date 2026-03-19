@@ -20,6 +20,7 @@ struct LoopClosureMatchResult {
   bool attempted{false};
   bool candidate_found{false};
   bool converged{false};
+  bool structure_sufficient{false};
   std::size_t keyframe_index{0};
   std::uint32_t frame_index{0};
   float score{0.0F};
@@ -42,6 +43,7 @@ class LoopClosureMatcher {
                        LoopClosureMatchResult* result) const;
 
  private:
+  config::MappingConfig config_{};
   localization::ScanMatchConfig scan_match_config_{};
   localization::IcpMatcher icp_matcher_{};
   localization::NdtMatcher ndt_matcher_{};

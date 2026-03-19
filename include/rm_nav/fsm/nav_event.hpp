@@ -23,6 +23,8 @@ enum class NavEventCode {
   kSafetyTriggered,
   kHeartbeatAnomaly,
   kRefereeStateChanged,
+  kRecoveryComplete,
+  kRecoveryEscalated,
 };
 
 struct NavEvent {

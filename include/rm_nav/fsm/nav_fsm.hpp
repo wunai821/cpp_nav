@@ -1,6 +1,9 @@
 #pragma once
 
+#include <string>
+
 #include "rm_nav/fsm/nav_event.hpp"
+#include "rm_nav/fsm/mode_recovery.hpp"
 #include "rm_nav/fsm/nav_state.hpp"
 
 namespace rm_nav::fsm {
@@ -23,6 +26,19 @@ struct NavFsmContext {
   bool safety_triggered{false};
   bool heartbeat_ok{true};
   bool referee_changed{false};
+  bool recovery_complete{false};
+  bool recovery_exhausted{false};
+  bool recovery_needs_relocalization{false};
+  RecoveryTier recovery_tier{RecoveryTier::kNone};
+  RecoveryCause recovery_cause{RecoveryCause::kNone};
+  RecoveryAction recovery_action{RecoveryAction::kNone};
+  std::string map_label{"unknown"};
+  std::string localization_matcher{"none"};
+  std::string localization_reason{"none"};
+  std::string planner_reason{"none"};
+  std::string safety_reason{"none"};
+  std::string degraded_mode{"none"};
+  std::string recovery_strategy{"none"};
 };
 
 struct NavFsmSnapshot {
@@ -35,6 +51,8 @@ struct NavFsmSnapshot {
   bool center_hold_active{false};
   bool recovery_active{false};
   bool failsafe_active{false};
+  RecoveryTier recovery_tier{RecoveryTier::kNone};
+  RecoveryAction recovery_action{RecoveryAction::kNone};
 };
 
 class NavFsm {

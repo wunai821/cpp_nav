@@ -7,6 +7,8 @@ struct SafetyConfig {
   double emergency_stop_distance_m{0.5};
   int heartbeat_timeout_ms{100};
   int deadman_timeout_ms{250};
+  int costmap_timeout_ms{250};
+  int mode_transition_freeze_ms{120};
   double collision_check_lookahead_s{0.8};
   double collision_check_dt_s{0.1};
   int hold_timeout_ms{1200};

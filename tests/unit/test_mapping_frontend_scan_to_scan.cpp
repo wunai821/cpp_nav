@@ -73,11 +73,14 @@ int main() {
   config.z_min_m = 0.2;
   config.z_max_m = 1.2;
   config.occupancy_resolution_m = 0.1;
-  config.pose_source = "scan_to_scan_icp";
+  config.pose_source = "lio_lite_scan_to_scan";
   config.frontend_match_max_iterations = 12;
   config.frontend_correspondence_distance_m = 0.8;
   config.frontend_min_match_score = 0.2;
   config.frontend_match_max_points = 64;
+  config.frontend_motion_compensation_enabled = true;
+  config.frontend_motion_compensation_min_yaw_rad = 0.01;
+  config.frontend_imu_yaw_weight = 1.0;
   config.keyframe_translation_threshold_m = 0.4;
   config.keyframe_yaw_threshold_rad = 0.2;
   config.loop_correction_apply_translation_step_m = 0.0;
@@ -95,18 +98,19 @@ int main() {
   auto frame1 =
       MakeFrame(world_points, t0 + std::chrono::seconds(1), 2U, 0.0F, 0.0F, 0.0F);
   frame1.preint.is_valid = true;
+  frame1.preint.sample_count = 4U;
   frame1.preint.delta_rpy.z = 0.10F;
   assert(engine.Update(frame1, raw1).ok());
 
   const auto result = engine.LatestResult();
-  assert(result.pose_source == "scan_to_scan_icp");
+  assert(result.pose_source == "lio_lite_scan_to_scan");
   assert(result.frontend_converged);
   assert(!result.frontend_fallback);
   assert(std::fabs(result.external_pose.position.x - raw1.position.x) < 1.0e-4F);
   assert(std::fabs(result.predicted_pose.position.x - raw1.position.x) < 1.0e-4F);
   assert(std::fabs(result.predicted_pose.rpy.z - 0.10F) < 0.02F);
   assert(std::fabs(result.map_to_base.position.x) < 0.12F);
-  assert(std::fabs(result.map_to_base.rpy.z) < 0.06F);
+  assert(std::fabs(result.map_to_base.rpy.z) < std::fabs(result.predicted_pose.rpy.z));
   assert(std::fabs(result.map_to_base.position.x) < std::fabs(raw1.position.x));
 
   std::cout << "test_mapping_frontend_scan_to_scan passed\n";

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -20,19 +21,33 @@
 
 namespace rm_nav::planning {
 
+struct PlanningOverrides {
+  float clearance_weight_scale{1.0F};
+  data::Pose3f temporary_goal{};
+  bool temporary_goal_valid{false};
+};
+
 struct PlannerStatus {
   GoalMode mode{GoalMode::kApproachCenter};
   float distance_to_goal_m{0.0F};
   float distance_to_center_m{0.0F};
   float yaw_error_rad{0.0F};
+  bool global_plan_succeeded{false};
+  bool local_plan_succeeded{false};
   bool reached{false};
   bool settling{false};
   bool hold_drifted{false};
   bool path_available{false};
+  bool fallback_cmd_used{false};
   int hold_frames_in_goal{0};
   common::TimeNs hold_settle_elapsed_ns{0};
   DwaScore dwa_score{};
   common::TimeNs planning_latency_ns{0};
+  float clearance_weight_scale{1.0F};
+  bool temporary_goal_active{false};
+  std::string degraded_mode{"none"};
+  std::string failure_reason{"none"};
+  std::string map_version{"unknown"};
 };
 
 class PlannerCoordinator {
@@ -42,17 +57,19 @@ class PlannerCoordinator {
   common::Status Plan(
       const data::Pose3f& current_pose, const data::GridMap2D& costmap,
       const std::vector<data::DynamicObstacle>& obstacles, data::Path2D* path,
-      data::ChassisCmd* cmd);
+      data::ChassisCmd* cmd, const PlanningOverrides* overrides = nullptr);
   common::Status PlanToGoal(
       const data::Pose3f& current_pose, const data::Pose3f& goal_pose,
       const data::GridMap2D& costmap, const std::vector<data::DynamicObstacle>& obstacles,
-      data::Path2D* path, data::ChassisCmd* cmd);
+      data::Path2D* path, data::ChassisCmd* cmd, const PlanningOverrides* overrides = nullptr);
   common::Status PlanAndPublish(const data::Pose3f& current_pose,
                                 const data::GridMap2D& costmap,
-                                const std::vector<data::DynamicObstacle>& obstacles);
+                                const std::vector<data::DynamicObstacle>& obstacles,
+                                const PlanningOverrides* overrides = nullptr);
   common::Status PlanAndPublishToGoal(
       const data::Pose3f& current_pose, const data::Pose3f& goal_pose,
-      const data::GridMap2D& costmap, const std::vector<data::DynamicObstacle>& obstacles);
+      const data::GridMap2D& costmap, const std::vector<data::DynamicObstacle>& obstacles,
+      const PlanningOverrides* overrides = nullptr);
   data::Path2D LatestPath() const { return global_path_.ReadSnapshot(); }
   data::ChassisCmd LatestCmd() const { return latest_cmd_.ReadSnapshot(); }
   PlannerStatus LatestStatus() const { return latest_status_.ReadSnapshot(); }
@@ -68,6 +85,7 @@ class PlannerCoordinator {
   common::DoubleBuffer<data::Path2D> global_path_{};
   common::DoubleBuffer<data::ChassisCmd> latest_cmd_{};
   common::DoubleBuffer<PlannerStatus> latest_status_{};
+  PlannerStatus last_logged_status_{};
   bool initialized_{false};
 };
 

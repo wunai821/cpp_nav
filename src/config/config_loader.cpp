@@ -161,7 +161,8 @@ common::Status ConfigLoader::LoadFromDirectory(
 
   const std::vector<std::string> required_files = {
       "system", "frames", "sensors", "comm", "debug", "planner", "safety"};
-  const std::vector<std::string> optional_files = {"localization", "mapping", "spawn"};
+  const std::vector<std::string> optional_files = {
+      "localization", "mapping", "costmap", "mot", "spawn"};
   FlatConfig merged_values;
 
   try {
@@ -521,6 +522,18 @@ common::Status ConfigLoader::LoadFromDirectory(
                   result.mapping.dynamic_known_obstacle_min_confidence);
     result.mapping.pose_source =
         GetString(merged_values, "mapping.pose_source", result.mapping.pose_source);
+    result.mapping.frontend_motion_compensation_enabled =
+        GetBool(merged_values, "mapping.frontend_motion_compensation_enabled",
+                result.mapping.frontend_motion_compensation_enabled);
+    result.mapping.frontend_motion_compensation_min_yaw_rad =
+        GetDouble(merged_values, "mapping.frontend_motion_compensation_min_yaw_rad",
+                  result.mapping.frontend_motion_compensation_min_yaw_rad);
+    result.mapping.frontend_imu_yaw_weight =
+        GetDouble(merged_values, "mapping.frontend_imu_yaw_weight",
+                  result.mapping.frontend_imu_yaw_weight);
+    result.mapping.frontend_imu_position_weight =
+        GetDouble(merged_values, "mapping.frontend_imu_position_weight",
+                  result.mapping.frontend_imu_position_weight);
     result.mapping.frontend_match_max_iterations =
         GetInt(merged_values, "mapping.frontend_match_max_iterations",
                result.mapping.frontend_match_max_iterations);
@@ -562,6 +575,9 @@ common::Status ConfigLoader::LoadFromDirectory(
     result.mapping.loop_candidate_max_yaw_delta_rad =
         GetDouble(merged_values, "mapping.loop_candidate_max_yaw_delta_rad",
                   result.mapping.loop_candidate_max_yaw_delta_rad);
+    result.mapping.loop_candidate_min_revisit_score =
+        GetDouble(merged_values, "mapping.loop_candidate_min_revisit_score",
+                  result.mapping.loop_candidate_min_revisit_score);
     result.mapping.loop_matcher =
         GetString(merged_values, "mapping.loop_matcher", result.mapping.loop_matcher);
     result.mapping.loop_match_max_iterations =
@@ -576,6 +592,9 @@ common::Status ConfigLoader::LoadFromDirectory(
     result.mapping.loop_match_max_points =
         GetInt(merged_values, "mapping.loop_match_max_points",
                result.mapping.loop_match_max_points);
+    result.mapping.loop_match_min_structure_span_m =
+        GetDouble(merged_values, "mapping.loop_match_min_structure_span_m",
+                  result.mapping.loop_match_min_structure_span_m);
     result.mapping.loop_correction_min_score =
         GetDouble(merged_values, "mapping.loop_correction_min_score",
                   result.mapping.loop_correction_min_score);
@@ -615,6 +634,48 @@ common::Status ConfigLoader::LoadFromDirectory(
     result.mapping.validation_max_loop_yaw_regression_rad =
         GetDouble(merged_values, "mapping.validation_max_loop_yaw_regression_rad",
                   result.mapping.validation_max_loop_yaw_regression_rad);
+
+    result.costmap.width = static_cast<std::uint32_t>(
+        GetInt(merged_values, "costmap.width", static_cast<int>(result.costmap.width)));
+    result.costmap.height = static_cast<std::uint32_t>(
+        GetInt(merged_values, "costmap.height", static_cast<int>(result.costmap.height)));
+    result.costmap.resolution_m =
+        GetDouble(merged_values, "costmap.resolution_m", result.costmap.resolution_m);
+    result.costmap.obstacle_layer_height_m =
+        GetDouble(merged_values, "costmap.obstacle_layer_height_m",
+                  result.costmap.obstacle_layer_height_m);
+    result.costmap.inflation_radius_m =
+        GetDouble(merged_values, "costmap.inflation_radius_m",
+                  result.costmap.inflation_radius_m);
+    result.costmap.dynamic_obstacle_inflation_m =
+        GetDouble(merged_values, "costmap.dynamic_obstacle_inflation_m",
+                  result.costmap.dynamic_obstacle_inflation_m);
+
+    result.mot.cluster_tolerance_m =
+        GetDouble(merged_values, "mot.cluster_tolerance_m", result.mot.cluster_tolerance_m);
+    result.mot.min_cluster_points = static_cast<std::size_t>(
+        GetInt(merged_values, "mot.min_cluster_points", static_cast<int>(result.mot.min_cluster_points)));
+    result.mot.max_cluster_points = static_cast<std::size_t>(
+        GetInt(merged_values, "mot.max_cluster_points", static_cast<int>(result.mot.max_cluster_points)));
+    result.mot.roi_radius_m =
+        GetDouble(merged_values, "mot.roi_radius_m", result.mot.roi_radius_m);
+    result.mot.reduced_roi_radius_m =
+        GetDouble(merged_values, "mot.reduced_roi_radius_m", result.mot.reduced_roi_radius_m);
+    result.mot.association_distance_m =
+        GetDouble(merged_values, "mot.association_distance_m", result.mot.association_distance_m);
+    result.mot.max_missed_frames = static_cast<std::uint32_t>(
+        GetInt(merged_values, "mot.max_missed_frames", static_cast<int>(result.mot.max_missed_frames)));
+    result.mot.process_noise =
+        GetDouble(merged_values, "mot.process_noise", result.mot.process_noise);
+    result.mot.measurement_noise =
+        GetDouble(merged_values, "mot.measurement_noise", result.mot.measurement_noise);
+    result.mot.initial_confidence =
+        GetDouble(merged_values, "mot.initial_confidence", result.mot.initial_confidence);
+    result.mot.confirmation_confidence =
+        GetDouble(merged_values, "mot.confirmation_confidence",
+                  result.mot.confirmation_confidence);
+    result.mot.clustering_budget_ms =
+        GetInt(merged_values, "mot.clustering_budget_ms", result.mot.clustering_budget_ms);
 
     result.planner.loop_hz =
         GetInt(merged_values, "planner.loop_hz", result.planner.loop_hz);
@@ -657,6 +718,36 @@ common::Status ConfigLoader::LoadFromDirectory(
     result.planner.hold_max_wz_radps =
         GetDouble(merged_values, "planner.hold_max_wz_radps",
                   result.planner.hold_max_wz_radps);
+    result.planner.center_hold_slot_radius_m =
+        GetDouble(merged_values, "planner.center_hold_slot_radius_m",
+                  result.planner.center_hold_slot_radius_m);
+    result.planner.center_hold_occupied_radius_m =
+        GetDouble(merged_values, "planner.center_hold_occupied_radius_m",
+                  result.planner.center_hold_occupied_radius_m);
+    result.planner.center_hold_dynamic_bias_radius_m =
+        GetDouble(merged_values, "planner.center_hold_dynamic_bias_radius_m",
+                  result.planner.center_hold_dynamic_bias_radius_m);
+    result.planner.center_hold_max_bias_m =
+        GetDouble(merged_values, "planner.center_hold_max_bias_m",
+                  result.planner.center_hold_max_bias_m);
+    result.planner.center_hold_position_deadband_m =
+        GetDouble(merged_values, "planner.center_hold_position_deadband_m",
+                  result.planner.center_hold_position_deadband_m);
+    result.planner.center_hold_yaw_deadband_rad =
+        GetDouble(merged_values, "planner.center_hold_yaw_deadband_rad",
+                  result.planner.center_hold_yaw_deadband_rad);
+    result.planner.center_hold_micro_max_v_mps =
+        GetDouble(merged_values, "planner.center_hold_micro_max_v_mps",
+                  result.planner.center_hold_micro_max_v_mps);
+    result.planner.center_hold_micro_max_wz_radps =
+        GetDouble(merged_values, "planner.center_hold_micro_max_wz_radps",
+                  result.planner.center_hold_micro_max_wz_radps);
+    result.planner.center_hold_position_kp =
+        GetDouble(merged_values, "planner.center_hold_position_kp",
+                  result.planner.center_hold_position_kp);
+    result.planner.center_hold_yaw_kp =
+        GetDouble(merged_values, "planner.center_hold_yaw_kp",
+                  result.planner.center_hold_yaw_kp);
     result.planner.dwa_linear_samples =
         GetInt(merged_values, "planner.dwa_linear_samples",
                result.planner.dwa_linear_samples);
@@ -691,6 +782,60 @@ common::Status ConfigLoader::LoadFromDirectory(
     result.planner.dynamic_emergency_distance_m =
         GetDouble(merged_values, "planner.dynamic_emergency_distance_m",
                   result.planner.dynamic_emergency_distance_m);
+    result.planner.dynamic_high_risk_penalty_scale =
+        GetDouble(merged_values, "planner.dynamic_high_risk_penalty_scale",
+                  result.planner.dynamic_high_risk_penalty_scale);
+    result.planner.dynamic_crossing_penalty_scale =
+        GetDouble(merged_values, "planner.dynamic_crossing_penalty_scale",
+                  result.planner.dynamic_crossing_penalty_scale);
+    result.planner.recovery_light_escalate_cycles =
+        GetInt(merged_values, "planner.recovery_light_escalate_cycles",
+               result.planner.recovery_light_escalate_cycles);
+    result.planner.recovery_medium_escalate_cycles =
+        GetInt(merged_values, "planner.recovery_medium_escalate_cycles",
+               result.planner.recovery_medium_escalate_cycles);
+    result.planner.recovery_heavy_exhaust_cycles =
+        GetInt(merged_values, "planner.recovery_heavy_exhaust_cycles",
+               result.planner.recovery_heavy_exhaust_cycles);
+    result.planner.recovery_heavy_restart_ticks =
+        GetInt(merged_values, "planner.recovery_heavy_restart_ticks",
+               result.planner.recovery_heavy_restart_ticks);
+    result.planner.recovery_light_rotate_wz_radps =
+        GetDouble(merged_values, "planner.recovery_light_rotate_wz_radps",
+                  result.planner.recovery_light_rotate_wz_radps);
+    result.planner.recovery_light_shift_vy_mps =
+        GetDouble(merged_values, "planner.recovery_light_shift_vy_mps",
+                  result.planner.recovery_light_shift_vy_mps);
+    result.planner.recovery_light_forward_vx_mps =
+        GetDouble(merged_values, "planner.recovery_light_forward_vx_mps",
+                  result.planner.recovery_light_forward_vx_mps);
+    result.planner.recovery_medium_backoff_vx_mps =
+        GetDouble(merged_values, "planner.recovery_medium_backoff_vx_mps",
+                  result.planner.recovery_medium_backoff_vx_mps);
+    result.planner.recovery_medium_shift_vy_mps =
+        GetDouble(merged_values, "planner.recovery_medium_shift_vy_mps",
+                  result.planner.recovery_medium_shift_vy_mps);
+    result.planner.recovery_medium_rotate_wz_radps =
+        GetDouble(merged_values, "planner.recovery_medium_rotate_wz_radps",
+                  result.planner.recovery_medium_rotate_wz_radps);
+    result.planner.recovery_reapproach_forward_vx_mps =
+        GetDouble(merged_values, "planner.recovery_reapproach_forward_vx_mps",
+                  result.planner.recovery_reapproach_forward_vx_mps);
+    result.planner.recovery_reapproach_lateral_offset_m =
+        GetDouble(merged_values, "planner.recovery_reapproach_lateral_offset_m",
+                  result.planner.recovery_reapproach_lateral_offset_m);
+    result.planner.recovery_reapproach_lookahead_points =
+        GetInt(merged_values, "planner.recovery_reapproach_lookahead_points",
+               result.planner.recovery_reapproach_lookahead_points);
+    result.planner.recovery_clearance_weight_scale =
+        GetDouble(merged_values, "planner.recovery_clearance_weight_scale",
+                  result.planner.recovery_clearance_weight_scale);
+    result.planner.recovery_slow_restart_linear_scale =
+        GetDouble(merged_values, "planner.recovery_slow_restart_linear_scale",
+                  result.planner.recovery_slow_restart_linear_scale);
+    result.planner.recovery_slow_restart_yaw_scale =
+        GetDouble(merged_values, "planner.recovery_slow_restart_yaw_scale",
+                  result.planner.recovery_slow_restart_yaw_scale);
 
     result.safety.loop_hz =
         GetInt(merged_values, "safety.loop_hz", result.safety.loop_hz);
@@ -703,6 +848,12 @@ common::Status ConfigLoader::LoadFromDirectory(
     result.safety.deadman_timeout_ms =
         GetInt(merged_values, "safety.deadman_timeout_ms",
                result.safety.deadman_timeout_ms);
+    result.safety.costmap_timeout_ms =
+        GetInt(merged_values, "safety.costmap_timeout_ms",
+               result.safety.costmap_timeout_ms);
+    result.safety.mode_transition_freeze_ms =
+        GetInt(merged_values, "safety.mode_transition_freeze_ms",
+               result.safety.mode_transition_freeze_ms);
     result.safety.collision_check_lookahead_s =
         GetDouble(merged_values, "safety.collision_check_lookahead_s",
                   result.safety.collision_check_lookahead_s);

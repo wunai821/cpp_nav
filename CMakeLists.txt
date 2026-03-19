@@ -91,7 +91,10 @@ add_library(rm_nav_core
   src/localization/pose_quality_estimator.cpp
   src/localization/relocalization_manager.cpp
   src/fsm/nav_fsm.cpp
+  src/fsm/mode_recovery.cpp
   src/mapping/mapping_engine.cpp
+  src/mapping/lio_frontend.cpp
+  src/mapping/eskf_lio.cpp
   src/mapping/map_builder_3d.cpp
   src/mapping/loop_candidate_detector.cpp
   src/mapping/loop_closure_matcher.cpp
@@ -102,8 +105,16 @@ add_library(rm_nav_core
   src/mapping/map_validator.cpp
   src/mapping/voxel_map.cpp
   src/mapping/waypoint_manager.cpp
+  src/perception/range_crop_filter.cpp
+  src/perception/ground_filter.cpp
+  src/perception/voxel_filter.cpp
   src/perception/preprocess_pipeline.cpp
+  src/perception/obstacle_layer.cpp
+  src/perception/inflation_layer.cpp
+  src/perception/dynamic_layer.cpp
   src/perception/local_costmap_builder.cpp
+  src/perception/euclidean_cluster.cpp
+  src/perception/tracker_kf.cpp
   src/perception/mot_manager.cpp
   src/planning/center_hold_controller.cpp
   src/planning/planner_coordinator.cpp
@@ -111,6 +122,7 @@ add_library(rm_nav_core
   src/planning/global_astar.cpp
   src/planning/mission_manager.cpp
   src/planning/omni_dwa.cpp
+  src/planning/recovery_planner.cpp
   src/safety/collision_checker.cpp
   src/safety/command_gate.cpp
   src/safety/deadman_checker.cpp
@@ -150,13 +162,19 @@ endfunction()
 function(rm_nav_add_unit_test TARGET_NAME SOURCE_FILE)
   add_executable(${TARGET_NAME} ${SOURCE_FILE})
   target_link_libraries(${TARGET_NAME} PRIVATE rm_nav_core)
-  add_test(NAME ${TARGET_NAME} COMMAND ${TARGET_NAME})
+  add_test(NAME ${TARGET_NAME} COMMAND $<TARGET_FILE:${TARGET_NAME}>)
+  set_tests_properties(${TARGET_NAME} PROPERTIES
+    WORKING_DIRECTORY ${RM_NAV_CTEST_WORKING_DIRECTORY}
+  )
 endfunction()
 
 function(rm_nav_add_integration_test TARGET_NAME SOURCE_FILE)
   add_executable(${TARGET_NAME} ${SOURCE_FILE})
   target_link_libraries(${TARGET_NAME} PRIVATE rm_nav_core)
-  add_test(NAME ${TARGET_NAME} COMMAND ${TARGET_NAME})
+  add_test(NAME ${TARGET_NAME} COMMAND $<TARGET_FILE:${TARGET_NAME}>)
+  set_tests_properties(${TARGET_NAME} PROPERTIES
+    WORKING_DIRECTORY ${RM_NAV_CTEST_WORKING_DIRECTORY}
+  )
 endfunction()
 
 # =========================
@@ -211,6 +229,7 @@ rm_nav_add_unit_test(test_preprocess_pipeline tests/unit/test_preprocess_pipelin
 rm_nav_add_unit_test(test_map_loader tests/unit/test_map_loader.cpp)
 rm_nav_add_unit_test(test_global_astar tests/unit/test_global_astar.cpp)
 rm_nav_add_unit_test(test_preintegration tests/unit/test_preintegration.cpp)
+rm_nav_add_unit_test(test_lio_frontend tests/unit/test_lio_frontend.cpp)
 rm_nav_add_unit_test(test_protocol_codec tests/unit/test_protocol_codec.cpp)
 rm_nav_add_unit_test(test_localization_loop tests/unit/test_localization_loop.cpp)
 rm_nav_add_unit_test(test_ndt_icp tests/unit/test_ndt_icp.cpp)
@@ -220,6 +239,7 @@ rm_nav_add_unit_test(test_center_hold tests/unit/test_center_hold.cpp)
 rm_nav_add_unit_test(test_collision_checker tests/unit/test_collision_checker.cpp)
 rm_nav_add_unit_test(test_command_gate tests/unit/test_command_gate.cpp)
 rm_nav_add_unit_test(test_mission_manager tests/unit/test_mission_manager.cpp)
+rm_nav_add_unit_test(test_recovery_planner tests/unit/test_recovery_planner.cpp)
 rm_nav_add_unit_test(test_local_costmap_builder tests/unit/test_local_costmap_builder.cpp)
 rm_nav_add_unit_test(test_mot_manager tests/unit/test_mot_manager.cpp)
 rm_nav_add_unit_test(test_planner_approach tests/unit/test_planner_approach.cpp)
@@ -276,6 +296,7 @@ set_tests_properties(
   test_command_gate
   test_mission_manager
   test_preprocess_pipeline
+  test_lio_frontend
   test_local_costmap_builder
   test_mot_manager
   test_planner_approach

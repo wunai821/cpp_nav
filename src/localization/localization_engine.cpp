@@ -1,9 +1,11 @@
 #include "rm_nav/localization/localization_engine.hpp"
 
 #include <cmath>
+#include <sstream>
 
 #include "rm_nav/data/tf_types.hpp"
 #include "rm_nav/tf/frame_ids.hpp"
+#include "rm_nav/utils/logger.hpp"
 
 namespace rm_nav::localization {
 namespace {
@@ -27,6 +29,21 @@ data::PointXYZI TransformPoint(const data::PointXYZI& point, const data::Pose3f&
   transformed.y = pose.position.y + sin_yaw * point.x + cos_yaw * point.y;
   transformed.z = pose.position.z + point.z;
   return transformed;
+}
+
+const char* ToString(RelocalizationPhase phase) {
+  switch (phase) {
+    case RelocalizationPhase::kTracking:
+      return "tracking";
+    case RelocalizationPhase::kLostLock:
+      return "lost_lock";
+    case RelocalizationPhase::kSearching:
+      return "searching";
+    case RelocalizationPhase::kStabilizing:
+      return "stabilizing";
+    default:
+      return "unknown";
+  }
 }
 
 }  // namespace
@@ -58,6 +75,8 @@ common::Status LocalizationEngine::Initialize(
   } else {
     matcher_ = &icp_matcher_;
   }
+  current_matcher_label_ = localization_config.matcher;
+  last_logged_matcher_label_ = current_matcher_label_;
   auto status = matcher_->Configure(matcher_config);
   if (!status.ok()) {
     return status;
@@ -91,6 +110,7 @@ common::Status LocalizationEngine::Initialize(
   initial_result.odom_to_base = initial_odom_to_base;
   initial_result.status.map_loaded = static_map_.global_map_loaded;
   initial_result.status.pose_trusted = false;
+  initial_result.matcher_name = current_matcher_label_;
   latest_result_.Publish(initial_result);
   map_to_odom_.Publish(initial_map_to_odom);
   odom_to_base_.Publish(initial_odom_to_base);
@@ -102,6 +122,11 @@ common::Status LocalizationEngine::Initialize(
     tf_tree_->PushMapToOdom(initial_map_to_odom);
     tf_tree_->PushOdomToBase(initial_odom_to_base);
   }
+  std::ostringstream stream;
+  stream << "initialized map=" << static_map_.version_label
+         << " matcher=" << current_matcher_label_
+         << " map_loaded=" << (static_map_.global_map_loaded ? "true" : "false");
+  utils::LogInfo("localization", stream.str());
   return common::Status::Ok();
 }
 
@@ -120,6 +145,7 @@ common::Status LocalizationEngine::ConfigureMatcherForLoad(bool light_mode) {
     return status;
   }
   matcher_light_mode_active_ = light_mode;
+  current_matcher_label_ = config_.matcher + std::string(light_mode ? "_light" : "");
   return common::Status::Ok();
 }
 
@@ -205,6 +231,8 @@ common::Status LocalizationEngine::Process(const data::SyncedFrame& frame,
       }
       result->matcher_latency_ns = result->relocalization.attempt_latency_ns;
       last_matcher_latency_ns_ = result->matcher_latency_ns;
+      current_matcher_label_ =
+          std::string("relocal_") + std::string(result->relocalization.matcher_used);
       if (result->relocalization.attempted && result->relocalization.succeeded) {
         match_status = common::Status::Ok();
       } else if (result->relocalization.attempted) {
@@ -224,9 +252,11 @@ common::Status LocalizationEngine::Process(const data::SyncedFrame& frame,
       result->matcher_latency_ns = common::NowNs() - matcher_begin_ns;
       last_matcher_latency_ns_ = result->matcher_latency_ns;
       result->relocalization = relocalization_manager_.CurrentStatus(frame.stamp);
+      current_matcher_label_ = config_.matcher + std::string(light_match_mode ? "_light" : "");
     }
   } else {
     result->relocalization = relocalization_manager_.CurrentStatus(frame.stamp);
+    current_matcher_label_ = "disabled";
   }
 
   if (match_status.ok() && match.converged) {
@@ -264,6 +294,13 @@ common::Status LocalizationEngine::Process(const data::SyncedFrame& frame,
                                                consecutive_failures_,
                                                static_map_.global_map_loaded,
                                                relocalization_match_succeeded);
+  if (coarse_relocalization_mode) {
+    result->status.degraded_mode = "relocalization_search";
+  } else if (stabilization_mode) {
+    result->status.degraded_mode = "relocalization_stabilizing";
+  } else if (light_match_mode) {
+    result->status.degraded_mode = "light_match";
+  }
   if (relocalization_match_succeeded) {
     relocalization_manager_.SetPendingMapToOdomTarget(result->map_to_odom);
   }
@@ -292,6 +329,8 @@ common::Status LocalizationEngine::Process(const data::SyncedFrame& frame,
     result->status.pose_trusted = false;
     result->status.converged = false;
     result->status.consecutive_failures = ++consecutive_failures_;
+    result->status.rejection_reason = "map_to_odom_guard";
+    result->status.degraded_mode = "map_to_odom_guard";
   }
 
   if (relocalization_manager_.stabilizing()) {
@@ -312,13 +351,20 @@ common::Status LocalizationEngine::Process(const data::SyncedFrame& frame,
       result->map_to_base.is_valid = true;
       result->status.pose_trusted = false;
       result->status.converged = false;
+      result->status.rejection_reason = "relocalization_stabilization_failed";
+      result->status.degraded_mode = "relocalization_search";
     }
     if (relocalization_manager_.stabilizing()) {
       result->status.pose_trusted = false;
+      if (result->status.rejection_reason == "none") {
+        result->status.rejection_reason = "stabilization_window";
+      }
     }
   } else {
     result->relocalization = relocalization_manager_.CurrentStatus(frame.stamp);
   }
+
+  result->matcher_name = current_matcher_label_;
 
   if (result->status.pose_trusted) {
     last_trusted_map_to_base_ = result->map_to_base;
@@ -331,6 +377,45 @@ common::Status LocalizationEngine::Process(const data::SyncedFrame& frame,
   const data::LidarFrame aligned_scan = TransformScanToMap(frame.lidar, result->map_to_base);
   latest_aligned_scan_.Publish(aligned_scan);
   ++processed_frames_;
+
+  const bool should_log_state =
+      current_matcher_label_ != last_logged_matcher_label_ ||
+      result->relocalization.phase != last_logged_relocalization_phase_ ||
+      result->status.pose_trusted != last_logged_pose_trusted_ ||
+      result->status.rejection_reason != last_logged_rejection_reason_ ||
+      result->light_match_mode != last_logged_light_match_mode_ ||
+      result->relocalization.attempted;
+  if (should_log_state) {
+    std::ostringstream stream;
+    stream << "mode=" << ToString(result->relocalization.phase)
+           << " map=" << static_map_.version_label
+           << " matcher=" << result->matcher_name
+           << " score=" << result->status.match_score
+           << " trusted=" << (result->status.pose_trusted ? "true" : "false")
+           << " reject=" << result->status.rejection_reason
+           << " degraded=" << result->status.degraded_mode
+           << " relocal=" << (result->relocalization.succeeded
+                                  ? "success"
+                                  : (result->relocalization.attempted ? "failed" : "idle"))
+           << " relocal_matcher=" << result->relocalization.matcher_used
+           << " relocal_score=" << result->relocalization.best_score;
+    if (result->relocalization.ambiguity_rejected) {
+      stream << " ambiguity_rejected=true";
+    }
+    if (result->relocalization.stabilization_failed) {
+      stream << " stabilization_failed=true";
+    }
+    if (result->status.pose_trusted) {
+      utils::LogInfo("localization", stream.str());
+    } else {
+      utils::LogWarn("localization", stream.str());
+    }
+    last_logged_matcher_label_ = current_matcher_label_;
+    last_logged_relocalization_phase_ = result->relocalization.phase;
+    last_logged_pose_trusted_ = result->status.pose_trusted;
+    last_logged_rejection_reason_ = result->status.rejection_reason;
+    last_logged_light_match_mode_ = result->light_match_mode;
+  }
   return common::Status::Ok();
 }
 

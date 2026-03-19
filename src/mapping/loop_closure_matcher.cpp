@@ -62,9 +62,25 @@ data::LidarFrame DownsampleScan(const data::LidarFrame& frame, int max_points) {
   return downsampled;
 }
 
+float AxisSpan(const std::vector<data::PointXYZI>& points, bool x_axis) {
+  if (points.empty()) {
+    return 0.0F;
+  }
+
+  float min_value = x_axis ? points.front().x : points.front().y;
+  float max_value = min_value;
+  for (const auto& point : points) {
+    const float value = x_axis ? point.x : point.y;
+    min_value = std::min(min_value, value);
+    max_value = std::max(max_value, value);
+  }
+  return max_value - min_value;
+}
+
 }  // namespace
 
 common::Status LoopClosureMatcher::Configure(const config::MappingConfig& config) {
+  config_ = config;
   matcher_ = config.loop_matcher;
   scan_match_config_.max_iterations = config.loop_match_max_iterations;
   scan_match_config_.correspondence_distance_m =
@@ -116,6 +132,20 @@ common::Status LoopClosureMatcher::Match(const data::SyncedFrame& frame,
   local_map.global_map_loaded = true;
 
   const data::LidarFrame scan = DownsampleScan(frame.lidar, max_points_);
+  const float min_structure_span =
+      static_cast<float>(std::max(0.0, config_.loop_match_min_structure_span_m));
+  if (min_structure_span > 0.0F) {
+    const float keyframe_span =
+        std::max(AxisSpan(keyframe.local_points, true), AxisSpan(keyframe.local_points, false));
+    const float scan_span =
+        std::max(AxisSpan(scan.points, true), AxisSpan(scan.points, false));
+    if (keyframe_span < min_structure_span || scan_span < min_structure_span) {
+      result->status_code = common::StatusCode::kNotReady;
+      result->status_message = "loop match rejected: insufficient structure span";
+      return common::Status::Ok();
+    }
+    result->structure_sufficient = true;
+  }
   const data::Pose3f initial_guess =
       RelativePoseInKeyframeFrame(keyframe.map_to_base, current_map_to_base);
   result->initial_guess_candidate_frame = initial_guess;

@@ -24,8 +24,12 @@ struct DwaScore {
   float dynamic_max_risk{0.0F};
   float dynamic_integrated_risk{0.0F};
   float dynamic_clearance_min{10.0F};
+  float dynamic_nearest_predicted_distance{10.0F};
   float dynamic_risk_05{0.0F};
   float dynamic_risk_10{0.0F};
+  float dynamic_high_risk_penalty{0.0F};
+  float dynamic_crossing_penalty{0.0F};
+  int dynamic_max_risk_level{0};
   float total_score{-1.0e9F};
 };
 
@@ -40,7 +44,8 @@ class OmniDwa {
                       const std::vector<data::DynamicObstacle>& obstacles,
                       const data::ChassisCmd& previous_cmd,
                       data::ChassisCmd* cmd,
-                      DwaScore* score) const;
+                      DwaScore* score,
+                      float clearance_weight_scale = 1.0F) const;
 
  private:
   config::PlannerConfig config_{};

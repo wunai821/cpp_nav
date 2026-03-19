@@ -49,6 +49,11 @@ int main() {
   for (const auto& obstacle : obstacles) {
     if (obstacle.is_confirmed && obstacle.velocity.x > 0.05F) {
       found_confirmed_moving = true;
+      assert(obstacle.predicted_pose_05s.position.x > obstacle.pose.position.x);
+      assert(obstacle.predicted_pose_10s.position.x > obstacle.predicted_pose_05s.position.x);
+      assert(obstacle.predicted_radius_m >= obstacle.radius_m);
+      assert(obstacle.risk_score > 0.0F);
+      assert(obstacle.risk_level != rm_nav::data::DynamicObstacleRiskLevel::kLow);
     }
   }
   assert(found_confirmed_moving);

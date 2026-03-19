@@ -17,6 +17,7 @@
 #include "rm_nav/mapping/loop_candidate_detector.hpp"
 #include "rm_nav/mapping/loop_closure_matcher.hpp"
 #include "rm_nav/mapping/loop_correction_gate.hpp"
+#include "rm_nav/mapping/lio_frontend.hpp"
 #include "rm_nav/mapping/map_projector_2d.hpp"
 #include "rm_nav/mapping/map_save_manager.hpp"
 #include "rm_nav/mapping/map_serializer.hpp"
@@ -83,6 +84,7 @@ class MappingEngine {
   config::MappingConfig config_{};
   MapBuilder3D builder_{};
   localization::IcpMatcher frontend_icp_matcher_{};
+  LioFrontend lio_frontend_{};
   LoopCandidateDetector loop_candidate_detector_{};
   LoopClosureMatcher loop_closure_matcher_{};
   LoopCorrectionGate loop_correction_gate_{};

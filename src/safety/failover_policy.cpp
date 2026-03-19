@@ -80,11 +80,14 @@ SafetyPolicyDecision FailoverPolicy::Evaluate(const SafetyPolicyInput& input) {
   }
 
   const bool planner_issue =
-      input.planner_failed || !input.planner_path_available || !input.planner_cmd_fresh;
-  const bool localization_issue = input.localization_degraded;
+      input.planner_failed || !input.planner_path_available || !input.planner_cmd_fresh ||
+      !input.planner_global_plan_succeeded || !input.planner_local_plan_succeeded;
+  const bool localization_issue =
+      input.localization_degraded || !input.localization_pose_trusted;
+  const bool costmap_issue = input.costmap_required && (!input.costmap_valid || !input.costmap_fresh);
   const bool transient_hold =
       input.collision_type != CollisionType::kNone || planner_issue || localization_issue ||
-      !input.costmap_valid || !input.chassis_feedback_ok;
+      costmap_issue || !input.chassis_feedback_ok || input.mode_transition_active;
 
   UpdateLatchedTime(transient_hold, input.stamp, &hold_issue_since_);
   UpdateLatchedTime(planner_issue, input.stamp, &planner_issue_since_);
@@ -107,15 +110,18 @@ SafetyPolicyDecision FailoverPolicy::Evaluate(const SafetyPolicyInput& input) {
       input.mission_timeout_enabled &&
       TimedOut(mission_started_at_, input.stamp, config_.mission_timeout_ms);
 
-  const bool fatal = !input.communication_ok || input.obstacle_too_close || localization_timeout ||
-                     planner_timeout || hold_timeout || mission_timeout;
+  const bool fatal = input.force_failsafe || !input.communication_ok || input.obstacle_too_close ||
+                     localization_timeout || planner_timeout || hold_timeout || mission_timeout;
 
   if (fatal) {
     state_ = SafetyState::kFailsafe;
   } else {
     switch (state_) {
       case SafetyState::kIdle:
-        if (input.start_signal_active && input.arming_ready && !input.localization_degraded) {
+        if (input.start_signal_active && input.arming_ready && input.localization_pose_trusted &&
+            !input.localization_degraded && (!input.costmap_required ||
+                                             (input.costmap_valid && input.costmap_fresh)) &&
+            !input.mode_transition_active) {
           state_ = SafetyState::kArmed;
         }
         break;
@@ -226,7 +232,8 @@ SafetyPolicyDecision FailoverPolicy::Evaluate(const SafetyPolicyInput& input) {
                   data::SafetySeverity::kWarning, "planner path unavailable");
     return decision;
   }
-  if (!input.costmap_valid || !input.chassis_feedback_ok) {
+  if ((input.costmap_required && (!input.costmap_valid || !input.costmap_fresh)) ||
+      !input.chassis_feedback_ok) {
     decision.has_event = true;
     decision.event =
         MakeEvent(input.stamp, data::SafetyEventCode::kSensorTimeout,

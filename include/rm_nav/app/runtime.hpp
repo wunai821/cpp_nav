@@ -27,6 +27,7 @@
 #include "rm_nav/perception/mot_manager.hpp"
 #include "rm_nav/perception/preprocess_pipeline.hpp"
 #include "rm_nav/planning/planner_coordinator.hpp"
+#include "rm_nav/planning/recovery_planner.hpp"
 #include "rm_nav/safety/safety_manager.hpp"
 #include "rm_nav/sync/sensor_sync_buffer.hpp"
 #include "rm_nav/tf/tf_tree_lite.hpp"
@@ -79,7 +80,7 @@ class Runtime {
   common::Status InitializeCombatPipelineFromSavedMap();
   fsm::NavFsmContext BuildFsmContext(bool referee_changed) const;
   data::ChassisCmd SelectCommandCandidate(const fsm::NavFsmSnapshot& snapshot,
-                                          common::TimePoint stamp) const;
+                                          common::TimePoint stamp);
   std::string RuntimeDebugOutputDir() const;
   bool CloneSyncedFrame(const data::SyncedFrame& source,
                         sync::SyncedFrameHandle* handle);
@@ -109,6 +110,7 @@ class Runtime {
   perception::LocalCostmapBuilder local_costmap_builder_{};
   perception::MotManager mot_manager_{};
   planning::PlannerCoordinator planner_{};
+  planning::RecoveryPlanner recovery_planner_{};
   safety::SafetyManager safety_manager_{};
   debug::FoxgloveServer foxglove_server_{};
   common::SpscRingQueue<sync::SyncedFrameHandle, 16> mapping_queue_{};
@@ -122,6 +124,8 @@ class Runtime {
   common::DoubleBuffer<data::OdomState> stm32_odom_{};
   common::DoubleBuffer<data::RefereeState> referee_state_{};
   common::DoubleBuffer<data::SafetyEvent> latest_safety_event_{};
+  common::DoubleBuffer<safety::SafetyResult> latest_safety_result_{};
+  common::DoubleBuffer<planning::RecoveryPlannerStatus> latest_recovery_status_{};
 
   std::atomic<std::uint64_t> driver_lidar_frames_{0};
   std::atomic<std::uint64_t> driver_imu_packets_{0};

@@ -1,6 +1,37 @@
 #include "rm_nav/fsm/nav_fsm.hpp"
 
+#include <sstream>
+
+#include "rm_nav/utils/logger.hpp"
+
 namespace rm_nav::fsm {
+const char* ToString(NavState state);
+const char* ToString(NavEventCode code);
+
+namespace {
+void LogFsmStatus(const NavFsmSnapshot& snapshot, const NavFsmContext& context) {
+  std::ostringstream stream;
+  stream << "mode=" << ToString(snapshot.state)
+         << " prev=" << ToString(snapshot.previous_state)
+         << " event=" << ToString(snapshot.last_event.code)
+         << " map=" << context.map_label
+         << " matcher=" << context.localization_matcher
+         << " recovery_tier=" << ToString(context.recovery_tier)
+         << " recovery_cause=" << ToString(context.recovery_cause)
+         << " recovery_action=" << ToString(context.recovery_action)
+         << " recovery_strategy=" << context.recovery_strategy
+         << " degrade=" << context.degraded_mode
+         << " loc_reason=" << context.localization_reason
+         << " planner_reason=" << context.planner_reason
+         << " safety_reason=" << context.safety_reason;
+  if (snapshot.state == NavState::kRecovery || snapshot.state == NavState::kFailsafe) {
+    utils::LogWarn("fsm", stream.str());
+  } else {
+    utils::LogInfo("fsm", stream.str());
+  }
+}
+
+}  // namespace
 
 const char* ToString(NavState state) {
   switch (state) {
@@ -64,6 +95,10 @@ const char* ToString(NavEventCode code) {
       return "HEARTBEAT_ANOMALY";
     case NavEventCode::kRefereeStateChanged:
       return "REFEREE_STATE_CHANGED";
+    case NavEventCode::kRecoveryComplete:
+      return "RECOVERY_COMPLETE";
+    case NavEventCode::kRecoveryEscalated:
+      return "RECOVERY_ESCALATED";
   }
   return "UNKNOWN";
 }
@@ -95,9 +130,15 @@ void NavFsm::RefreshFlags() {
   snapshot_.center_hold_active = snapshot_.state == NavState::kHoldCenter;
   snapshot_.recovery_active = snapshot_.state == NavState::kRecovery;
   snapshot_.failsafe_active = snapshot_.state == NavState::kFailsafe;
+  snapshot_.recovery_tier =
+      snapshot_.state == NavState::kRecovery ? snapshot_.recovery_tier : RecoveryTier::kNone;
+  snapshot_.recovery_action =
+      snapshot_.state == NavState::kRecovery ? snapshot_.recovery_action : RecoveryAction::kNone;
 }
 
 NavFsmSnapshot NavFsm::Update(common::TimePoint stamp, const NavFsmContext& context) {
+  const auto state_before = snapshot_.state;
+  const auto event_before = snapshot_.last_event.code;
   if (context.referee_changed) {
     snapshot_.last_event =
         MakeEvent(stamp, NavEventCode::kRefereeStateChanged, "referee state changed");
@@ -106,11 +147,13 @@ NavFsmSnapshot NavFsm::Update(common::TimePoint stamp, const NavFsmContext& cont
   if (!context.heartbeat_ok) {
     Transition(stamp, NavState::kFailsafe, NavEventCode::kHeartbeatAnomaly,
                "heartbeat anomaly");
+    LogFsmStatus(snapshot_, context);
     return snapshot_;
   }
   if (context.safety_triggered) {
     Transition(stamp, NavState::kFailsafe, NavEventCode::kSafetyTriggered,
                "safety trigger");
+    LogFsmStatus(snapshot_, context);
     return snapshot_;
   }
 
@@ -202,9 +245,13 @@ NavFsmSnapshot NavFsm::Update(common::TimePoint stamp, const NavFsmContext& cont
       }
       break;
     case NavState::kRecovery:
-      if (!context.localization_degraded && !context.planner_failed && context.combat_ready &&
-          context.map_loaded) {
-        Transition(stamp, NavState::kGotoCenter, NavEventCode::kMapLoadSuccess,
+      snapshot_.recovery_tier = context.recovery_tier;
+      snapshot_.recovery_action = context.recovery_action;
+      if (context.recovery_exhausted) {
+        Transition(stamp, NavState::kFailsafe, NavEventCode::kRecoveryEscalated,
+                   "recovery exhausted");
+      } else if (context.recovery_complete && context.combat_ready && context.map_loaded) {
+        Transition(stamp, NavState::kGotoCenter, NavEventCode::kRecoveryComplete,
                    "recovery complete");
       }
       break;
@@ -221,6 +268,16 @@ NavFsmSnapshot NavFsm::Update(common::TimePoint stamp, const NavFsmContext& cont
   }
 
   RefreshFlags();
+  if (snapshot_.state != NavState::kRecovery) {
+    snapshot_.recovery_tier = RecoveryTier::kNone;
+    snapshot_.recovery_action = RecoveryAction::kNone;
+  } else {
+    snapshot_.recovery_tier = context.recovery_tier;
+    snapshot_.recovery_action = context.recovery_action;
+  }
+  if (snapshot_.state != state_before || snapshot_.last_event.code != event_before) {
+    LogFsmStatus(snapshot_, context);
+  }
   return snapshot_;
 }
 

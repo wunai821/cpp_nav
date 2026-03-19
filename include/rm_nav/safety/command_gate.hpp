@@ -13,11 +13,23 @@ enum class CommandGateReason {
   kBrakeRequested,
   kStaticCollision,
   kDynamicCollision,
+  kPlannerTimeout,
+  kCommunicationLost,
+  kChassisFeedbackLost,
+  kCostmapInvalid,
+  kCostmapStale,
+  kLocalizationDegraded,
+  kPlannerFailed,
+  kModeTransition,
+  kFailsafeOverride,
 };
+
+const char* ToString(CommandGateReason reason);
 
 struct CommandGateResult {
   data::ChassisCmd command{};
   bool blocked{false};
+  bool limited{false};
   CommandGateReason reason{CommandGateReason::kNone};
 };
 

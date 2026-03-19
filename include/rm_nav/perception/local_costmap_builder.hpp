@@ -7,6 +7,9 @@
 #include "rm_nav/data/lidar_frame.hpp"
 #include "rm_nav/data/local_map.hpp"
 #include "rm_nav/data/pose.hpp"
+#include "rm_nav/perception/dynamic_layer.hpp"
+#include "rm_nav/perception/inflation_layer.hpp"
+#include "rm_nav/perception/obstacle_layer.hpp"
 
 namespace rm_nav::perception {
 
@@ -35,10 +38,18 @@ class LocalCostmapBuilder {
                                  const data::Pose3f& pose,
                                  const std::vector<data::DynamicObstacle>& obstacles);
   data::LocalCostmap LatestCostmap() const { return latest_costmap_.ReadSnapshot(); }
+  data::GridMap2D LatestStaticLayer() const { return latest_static_layer_.ReadSnapshot(); }
+  data::GridMap2D LatestDynamicLayer() const { return latest_dynamic_layer_.ReadSnapshot(); }
 
  private:
+  ObstacleLayer obstacle_layer_{};
+  InflationLayer inflation_layer_{};
+  DynamicLayer dynamic_layer_{};
   LocalCostmapConfig config_{};
   common::DoubleBuffer<data::LocalCostmap> latest_costmap_{};
+  common::DoubleBuffer<data::GridMap2D> latest_static_layer_{};
+  common::DoubleBuffer<data::GridMap2D> latest_dynamic_layer_{};
+  bool configured_{false};
 };
 
 }  // namespace rm_nav::perception

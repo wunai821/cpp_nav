@@ -92,6 +92,7 @@ int main() {
   config.loop_match_correspondence_distance_m = 0.8;
   config.loop_match_min_score = 0.2;
   config.loop_match_max_points = 64;
+  config.loop_match_min_structure_span_m = 0.2;
 
   const auto now = rm_nav::common::Now();
   const auto world_points = MakeWorldPoints();
@@ -115,11 +116,19 @@ int main() {
   assert(result.candidate_found);
   assert(result.status_code == rm_nav::common::StatusCode::kOk);
   assert(result.converged);
+  assert(result.structure_sufficient);
   assert(result.score >= 0.2F);
   assert(result.iterations > 0);
   assert(result.translation_correction_m < 0.25F);
   assert(result.yaw_correction_rad < 0.2F);
   assert(result.matched_pose_candidate_frame.is_valid);
+
+  config.loop_match_min_structure_span_m = 10.0;
+  assert(matcher.Configure(config).ok());
+  assert(matcher.Match(frame, current_pose, keyframe, candidate, &result).ok());
+  assert(!result.converged);
+  assert(result.status_code == rm_nav::common::StatusCode::kNotReady);
+  assert(result.status_message.find("insufficient structure") != std::string::npos);
 
   std::cout << "test_loop_closure_matcher passed\n";
   return 0;

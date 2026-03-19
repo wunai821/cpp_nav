@@ -14,13 +14,29 @@
 
 namespace rm_nav::safety {
 
+enum class SafetyCommandAuthority {
+  kAllow = 0,
+  kLimited,
+  kFreeze,
+  kFailsafe,
+};
+
+const char* ToString(SafetyCommandAuthority authority);
+
 struct SafetyInput {
   common::TimePoint stamp{};
   bool start_signal_active{false};
   bool arming_ready{false};
   bool navigation_requested{false};
+  bool costmap_required{true};
+  bool mode_transition_active{false};
+  bool force_failsafe{false};
   bool planner_path_available{false};
+  bool planner_global_plan_succeeded{false};
+  bool planner_local_plan_succeeded{false};
   bool localization_degraded{false};
+  bool localization_pose_trusted{false};
+  float localization_match_score{0.0F};
   bool planner_failed{false};
   bool goal_reached{false};
   bool mission_timeout_enabled{true};
@@ -34,6 +50,11 @@ struct SafetyInput {
 
 struct SafetyResult {
   SafetyState state{SafetyState::kIdle};
+  SafetyCommandAuthority authority{SafetyCommandAuthority::kFreeze};
+  data::ChassisCmd allow_cmd{};
+  data::ChassisCmd limited_cmd{};
+  data::ChassisCmd freeze_cmd{};
+  data::ChassisCmd failsafe_cmd{};
   data::ChassisCmd gated_cmd{};
   data::SafetyEvent event{};
   bool has_event{false};
@@ -42,8 +63,15 @@ struct SafetyResult {
   bool communication_ok{true};
   bool chassis_feedback_ok{true};
   bool costmap_valid{false};
+  bool costmap_fresh{false};
+  bool localization_quality_ok{false};
+  bool planner_status_ok{false};
+  bool mode_transition_active{false};
+  bool force_failsafe{false};
+  bool gate_limited{false};
   CollisionType collision_type{CollisionType::kNone};
   bool obstacle_too_close{false};
+  CommandGateReason gate_reason{CommandGateReason::kNone};
 };
 
 class SafetyManager {
@@ -59,6 +87,7 @@ class SafetyManager {
   DeadmanChecker deadman_checker_{};
   FailoverPolicy failover_policy_{};
   WatchdogHeartbeat watchdog_heartbeat_{};
+  common::TimePoint last_mode_transition_at_{};
   bool configured_{false};
 };
 

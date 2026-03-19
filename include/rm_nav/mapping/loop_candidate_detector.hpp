@@ -19,6 +19,7 @@ struct LoopClosureCandidate {
   common::TimePoint stamp{};
   float distance_m{0.0F};
   float yaw_delta_rad{0.0F};
+  float revisit_score{0.0F};
   common::TimeNs time_separation_ns{0};
 };
 

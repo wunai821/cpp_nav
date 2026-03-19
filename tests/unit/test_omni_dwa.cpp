@@ -62,8 +62,11 @@ int main() {
   obstacle.velocity.x = 0.4F;
   obstacle.velocity.y = -0.2F;
   obstacle.radius_m = 0.3F;
+  obstacle.predicted_radius_m = 0.45F;
   obstacle.confidence = 0.9F;
+  obstacle.risk_score = 0.8F;
   obstacle.is_confirmed = true;
+  obstacle.risk_level = rm_nav::data::DynamicObstacleRiskLevel::kHigh;
 
   rm_nav::data::ChassisCmd previous_cmd;
   previous_cmd.vx_mps = 0.2F;
@@ -76,7 +79,17 @@ int main() {
   assert(!cmd.brake);
   assert(score.total_score > -1.0e8F);
   assert(score.dynamic_clearance_min > 0.0F);
+  assert(score.dynamic_nearest_predicted_distance > 0.0F);
   assert(score.dynamic_integrated_risk >= 0.0F);
+  assert(score.dynamic_high_risk_penalty >= 0.0F);
+  assert(score.dynamic_crossing_penalty >= 0.0F);
+
+  rm_nav::data::ChassisCmd biased_cmd;
+  rm_nav::planning::DwaScore biased_score;
+  assert(dwa.Plan(current_pose, goal, path, costmap, {obstacle}, previous_cmd, &biased_cmd,
+                  &biased_score, 2.0F)
+             .ok());
+  assert(biased_score.clearance_score >= score.clearance_score);
 
   std::cout << "test_omni_dwa passed\n";
   return 0;

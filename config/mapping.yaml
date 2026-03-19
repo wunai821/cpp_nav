@@ -32,7 +32,11 @@ mapping:
   dynamic_known_obstacle_mask_enabled: true  # 是否把 MOT 已知动态障碍显式喂给建图并做禁写图；建议默认打开，比单纯按近场半径抑制更聪明。
   dynamic_known_obstacle_margin_m: 0.25  # 已知动态障碍写图禁区的额外膨胀半径，单位米；会在 obstacle.radius_m 基础上扩一圈保险边。
   dynamic_known_obstacle_min_confidence: 0.35  # 只有置信度高于该值的动态障碍才参与建图禁写图，避免低质量 MOT 结果误伤静态结构。
-  pose_source: odom  # 建图位姿来源；可选 odom / scan_to_scan_icp / scan_to_map_icp。建议热身建图优先试 scan_to_scan_icp 或 scan_to_map_icp。
+  pose_source: odom  # 建图位姿来源；可选 odom / eskf_lite / scan_to_scan_icp / scan_to_map_icp / lio_lite_scan_to_scan / lio_lite_scan_to_map。
+  frontend_motion_compensation_enabled: true  # 是否启用轻量前端的扫描内运动补偿；快速转向时建议保持开启，减轻局部拉丝。
+  frontend_motion_compensation_min_yaw_rad: 0.03  # 只有单帧预积分 yaw 变化超过该值时才做扫描内轻补偿，避免低速时白白改点云。
+  frontend_imu_yaw_weight: 0.75  # ESKF-lite 预测时 IMU yaw 增量权重；越大越依赖预积分姿态，越小越跟随外部 odom。
+  frontend_imu_position_weight: 0.15  # ESKF-lite 预测时 IMU 平移增量权重；保持较小即可，用来轻微抑制快速转向时的位姿漂移。
   frontend_match_max_iterations: 10  # 建图前端 ICP 的最大迭代次数；提高能增强收敛但也更吃算力。
   frontend_correspondence_distance_m: 0.75  # 建图前端 ICP 的对应点距离阈值，单位米。
   frontend_min_match_score: 0.2  # 建图前端 ICP 的最低匹配得分；低于该值时回退到外部 pose。
@@ -47,11 +51,13 @@ mapping:
   loop_candidate_distance_threshold_m: 1.0  # 回访候选粗筛的平面距离阈值；当前位置与历史 keyframe 距离小于该值时才认为值得尝试回环。
   loop_candidate_min_time_separation_s: 5.0  # 回访候选粗筛的最小时间间隔；过滤掉过近的相邻关键帧，避免把连续帧误判成回环。
   loop_candidate_max_yaw_delta_rad: 0.6  # 回访候选粗筛允许的最大航向差；超过该值通常说明姿态差异过大，不进入后续轻量匹配。
+  loop_candidate_min_revisit_score: 0.35  # 回访候选综合得分下限；同时考虑距离、yaw 差和时间分离，低于该值不进入轻量回环匹配。
   loop_matcher: icp  # 轻量回环局部匹配器类型；当前推荐使用 icp，ndt 仅保留接口还未真正实现。
   loop_match_max_iterations: 8  # 轻量回环局部匹配的最大迭代次数；过大容易拖慢热身建图主循环。
   loop_match_correspondence_distance_m: 0.75  # 轻量回环局部匹配的对应点最大距离阈值，单位米。
   loop_match_min_score: 0.55  # 轻量回环局部匹配的最低得分阈值；低于该值通常说明候选不够可信。
   loop_match_max_points: 160  # 当前帧参与轻量回环匹配的最大点数；超过后会做均匀下采样，保证算力稳定。
+  loop_match_min_structure_span_m: 0.45  # 轻量回环前的结构下限；当前 scan 或候选 keyframe 结构跨度过小就拒绝，减少相似区域误匹配。
   loop_correction_min_score: 0.6  # 小修正接受器的最低得分阈值；只有高于该值的局部匹配结果才允许进入 correction 候选。
   loop_correction_max_translation_m: 0.25  # 小修正接受器允许的最大平移修正量，单位米；超过该值认为回环修正过猛，直接拒绝。
   loop_correction_max_yaw_rad: 0.15  # 小修正接受器允许的最大 yaw 修正量，单位弧度；超过该值容易把地图拉坏。

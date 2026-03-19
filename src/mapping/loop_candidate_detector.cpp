@@ -22,6 +22,16 @@ float NormalizeAngle(float angle) {
 
 }  // namespace
 
+float Clamp01(float value) {
+  if (value < 0.0F) {
+    return 0.0F;
+  }
+  if (value > 1.0F) {
+    return 1.0F;
+  }
+  return value;
+}
+
 common::Status LoopCandidateDetector::FindCandidate(
     const config::MappingConfig& config, const data::Pose3f& current_pose,
     common::TimePoint current_stamp, std::uint32_t current_frame_index,
@@ -37,7 +47,7 @@ common::Status LoopCandidateDetector::FindCandidate(
 
   const auto min_separation_ns = static_cast<common::TimeNs>(
       config.loop_candidate_min_time_separation_s * static_cast<double>(common::kNanosecondsPerSecond));
-  float best_distance = std::numeric_limits<float>::max();
+  float best_score = -std::numeric_limits<float>::max();
 
   for (std::size_t index = 0; index < keyframes.size(); ++index) {
     const auto& keyframe = keyframes[index];
@@ -64,14 +74,30 @@ common::Status LoopCandidateDetector::FindCandidate(
       continue;
     }
 
-    if (distance < best_distance) {
-      best_distance = distance;
+    const float distance_score =
+        1.0F - (distance /
+                std::max(0.01F, static_cast<float>(config.loop_candidate_distance_threshold_m)));
+    const float yaw_score =
+        1.0F - (yaw_delta /
+                std::max(0.01F, static_cast<float>(config.loop_candidate_max_yaw_delta_rad)));
+    const float time_score = Clamp01(
+        static_cast<float>(separation_ns) /
+        std::max(1.0F, 2.0F * static_cast<float>(min_separation_ns)));
+    const float revisit_score =
+        0.50F * Clamp01(distance_score) + 0.20F * Clamp01(yaw_score) + 0.30F * time_score;
+    if (revisit_score < static_cast<float>(config.loop_candidate_min_revisit_score)) {
+      continue;
+    }
+
+    if (revisit_score > best_score) {
+      best_score = revisit_score;
       candidate->found = true;
       candidate->keyframe_index = index;
       candidate->frame_index = keyframe.frame_index;
       candidate->stamp = keyframe.stamp;
       candidate->distance_m = distance;
       candidate->yaw_delta_rad = yaw_delta;
+      candidate->revisit_score = revisit_score;
       candidate->time_separation_ns = separation_ns;
     }
   }

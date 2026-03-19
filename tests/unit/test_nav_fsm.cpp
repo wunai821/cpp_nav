@@ -31,10 +31,15 @@ int main() {
 
   context.center_drifted = false;
   context.localization_degraded = true;
+  context.recovery_tier = rm_nav::fsm::RecoveryTier::kHeavy;
+  context.recovery_action = rm_nav::fsm::RecoveryAction::kStopAndRelocalize;
   snapshot = fsm.Update(rm_nav::common::Now(), context);
   assert(snapshot.state == rm_nav::fsm::NavState::kRecovery);
+  assert(snapshot.recovery_tier == rm_nav::fsm::RecoveryTier::kHeavy);
+  assert(snapshot.recovery_action == rm_nav::fsm::RecoveryAction::kStopAndRelocalize);
 
   context.localization_degraded = false;
+  context.recovery_complete = true;
   snapshot = fsm.Update(rm_nav::common::Now(), context);
   assert(snapshot.state == rm_nav::fsm::NavState::kGotoCenter);
 
