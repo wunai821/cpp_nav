@@ -27,6 +27,16 @@ struct LocalizationConfig {
   double relocalization_min_match_score{0.35};
   double relocalization_linear_search_step_m{1.5};
   double relocalization_yaw_search_step_rad{0.35};
+  int relocalization_stabilization_frames{3};
+  int relocalization_stabilization_time_ms{300};
+  double relocalization_map_to_odom_apply_translation_step_m{0.25};
+  double relocalization_map_to_odom_apply_yaw_step_rad{0.15};
+  double relocalization_recovery_spin_wz_radps{0.35};
+  double relocalization_recovery_backoff_vx_mps{0.12};
+  int relocalization_recovery_backoff_ticks{8};
+  double relocalization_ambiguity_score_gap{0.03};
+  double relocalization_ambiguity_translation_m{1.0};
+  double relocalization_ambiguity_yaw_rad{0.35};
   double map_to_odom_guard_translation_m{0.8};
   double map_to_odom_guard_yaw_rad{0.45};
 };

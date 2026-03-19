@@ -121,6 +121,36 @@ std::chrono::milliseconds LoopPeriodFromHz(int hz, int fallback_ms) {
   return std::chrono::milliseconds(1000 / hz);
 }
 
+const char* ToString(localization::RelocalizationPhase phase) {
+  switch (phase) {
+    case localization::RelocalizationPhase::kTracking:
+      return "tracking";
+    case localization::RelocalizationPhase::kLostLock:
+      return "lost_lock";
+    case localization::RelocalizationPhase::kSearching:
+      return "searching";
+    case localization::RelocalizationPhase::kStabilizing:
+      return "stabilizing";
+    default:
+      return "unknown";
+  }
+}
+
+const char* ToString(localization::RelocalizationRecoveryAction action) {
+  switch (action) {
+    case localization::RelocalizationRecoveryAction::kNone:
+      return "none";
+    case localization::RelocalizationRecoveryAction::kSlowSpin:
+      return "slow_spin";
+    case localization::RelocalizationRecoveryAction::kBackoffSpin:
+      return "backoff_spin";
+    case localization::RelocalizationRecoveryAction::kFixedPoseSweep:
+      return "fixed_pose_sweep";
+    default:
+      return "unknown";
+  }
+}
+
 void WritePointCloudPcd(const std::filesystem::path& path,
                         const std::vector<data::PointXYZI>& points) {
   std::ofstream output(path);
@@ -982,8 +1012,30 @@ void WriteDebugSnapshot(const localization::LocalizationEngine& localization,
            << (result.relocalization.attempted ? "true" : "false") << ",\n";
     output << "  \"relocalization_succeeded\": "
            << (result.relocalization.succeeded ? "true" : "false") << ",\n";
+    output << "  \"relocalization_phase\": \"" << ToString(result.relocalization.phase)
+           << "\",\n";
+    output << "  \"relocalization_recovery_action\": \""
+           << ToString(result.relocalization.recovery_action) << "\",\n";
+    output << "  \"relocalization_ambiguity_rejected\": "
+           << (result.relocalization.ambiguity_rejected ? "true" : "false") << ",\n";
+    output << "  \"relocalization_stabilization_failed\": "
+           << (result.relocalization.stabilization_failed ? "true" : "false") << ",\n";
+    output << "  \"relocalization_secondary_check_performed\": "
+           << (result.relocalization.secondary_check_performed ? "true" : "false") << ",\n";
+    output << "  \"relocalization_secondary_check_passed\": "
+           << (result.relocalization.secondary_check_passed ? "true" : "false") << ",\n";
+    output << "  \"relocalization_map_to_odom_blending\": "
+           << (result.relocalization.map_to_odom_blending_active ? "true" : "false") << ",\n";
     output << "  \"relocalization_candidates\": " << result.relocalization.candidates_tested
            << ",\n";
+    output << "  \"relocalization_failed_attempts\": " << result.relocalization.failed_attempts
+           << ",\n";
+    output << "  \"relocalization_lost_lock_elapsed_ns\": "
+           << result.relocalization.lost_lock_elapsed_ns << ",\n";
+    output << "  \"relocalization_stabilization_observations\": "
+           << result.relocalization.stabilization_observations << ",\n";
+    output << "  \"relocalization_stabilization_elapsed_ns\": "
+           << result.relocalization.stabilization_elapsed_ns << ",\n";
     output << "  \"relocalization_score\": " << result.relocalization.best_score << "\n";
     output << "}\n";
   }
@@ -2497,9 +2549,20 @@ data::ChassisCmd Runtime::SelectCommandCandidate(const fsm::NavFsmSnapshot& snap
       if (!combat_pipeline_ready_.load(std::memory_order_acquire)) {
         break;
       }
-      const auto planner_cmd = planner_.LatestCmd();
-      candidate_cmd = ClampCommandForMode(planner_cmd, snapshot, loaded_config_, stamp);
-      if (snapshot.recovery_active) {
+      const auto localization_result = localization_.LatestResult();
+      if (localization_result.relocalization.active &&
+          localization_result.relocalization.recovery_action !=
+              localization::RelocalizationRecoveryAction::kNone) {
+        candidate_cmd =
+            ClampCommandForMode(localization_result.relocalization.recovery_cmd, snapshot,
+                                loaded_config_, stamp);
+      } else {
+        const auto planner_cmd = planner_.LatestCmd();
+        candidate_cmd = ClampCommandForMode(planner_cmd, snapshot, loaded_config_, stamp);
+      }
+      if (snapshot.recovery_active &&
+          localization_result.relocalization.recovery_action ==
+              localization::RelocalizationRecoveryAction::kNone) {
         candidate_cmd.vx_mps *= static_cast<float>(loaded_config_.safety.recovery_speed_scale);
         candidate_cmd.vy_mps *= static_cast<float>(loaded_config_.safety.recovery_speed_scale);
         candidate_cmd.wz_radps *= static_cast<float>(loaded_config_.safety.recovery_yaw_scale);

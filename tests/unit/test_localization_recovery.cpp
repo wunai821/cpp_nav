@@ -9,6 +9,7 @@
 #include "rm_nav/data/synced_frame.hpp"
 #include "rm_nav/localization/localization_engine.hpp"
 #include "rm_nav/localization/map_loader.hpp"
+#include "rm_nav/localization/map_odom_fuser.hpp"
 #include "rm_nav/tf/tf_tree_lite.hpp"
 
 namespace {
@@ -49,6 +50,12 @@ rm_nav::data::SyncedFrame MakeFrame(const rm_nav::localization::StaticMap& map,
   return frame;
 }
 
+float PoseDistance(const rm_nav::data::Pose3f& left, const rm_nav::data::Pose3f& right) {
+  const float dx = left.position.x - right.position.x;
+  const float dy = left.position.y - right.position.y;
+  return std::sqrt(dx * dx + dy * dy);
+}
+
 }  // namespace
 
 int main() {
@@ -58,8 +65,13 @@ int main() {
   localization_config.relocalization_linear_search_step_m = 1.5;
   localization_config.relocalization_yaw_search_step_rad = 0.35;
   localization_config.relocalization_min_match_score = 0.2;
+  localization_config.relocalization_stabilization_frames = 2;
+  localization_config.relocalization_stabilization_time_ms = 0;
+  localization_config.relocalization_map_to_odom_apply_translation_step_m = 0.18;
+  localization_config.relocalization_map_to_odom_apply_yaw_step_rad = 0.08;
   localization_config.max_position_jump_m = 0.4;
   localization_config.max_yaw_jump_rad = 0.25;
+
   rm_nav::config::SpawnConfig spawn_config;
   spawn_config.x_m = 2.5;
   spawn_config.y_m = 2.2;
@@ -91,6 +103,7 @@ int main() {
   assert(localization.Process(first_frame, &first_result).ok());
   assert(first_result.map_to_odom.is_valid);
   assert(first_result.status.iterations > 0);
+
   const auto second_stamp = first_stamp + std::chrono::milliseconds(150);
   auto second_frame = MakeFrame(map, second_stamp, kTrueX, kTrueY, kTrueYaw);
   second_frame.lidar.frame_index = 8U;
@@ -121,7 +134,40 @@ int main() {
   assert(third_result.relocalization.active);
   assert(third_result.relocalization.attempted);
   assert(third_result.relocalization.succeeded);
-  assert(third_result.status.pose_trusted);
+  assert(third_result.relocalization.phase ==
+         rm_nav::localization::RelocalizationPhase::kStabilizing);
+  assert(!third_result.status.pose_trusted);
+
+  rm_nav::localization::MapOdomFuser fuser;
+  rm_nav::data::Pose3f direct_map_to_odom;
+  assert(fuser.Fuse(third_result.odom_to_base, third_result.relocalization.matched_pose,
+                    &direct_map_to_odom)
+             .ok());
+  const float blended_step =
+      PoseDistance(second_result.map_to_odom, third_result.map_to_odom);
+  const float direct_step =
+      PoseDistance(second_result.map_to_odom, direct_map_to_odom);
+  assert(blended_step > 0.0F);
+  assert(blended_step < direct_step);
+
+  const auto fourth_stamp = third_stamp + std::chrono::milliseconds(150);
+  auto fourth_frame = MakeFrame(map, fourth_stamp, kTrueX, kTrueY, kTrueYaw);
+  fourth_frame.lidar.frame_index = 10U;
+  fourth_frame.lidar.points.resize(4U);
+  odom.stamp = fourth_stamp;
+  odom.x_m = 3.82F;
+  odom.y_m = 3.33F;
+  odom.yaw_rad = 0.60F;
+  localization.SetLatestOdom(odom);
+
+  rm_nav::localization::LocalizationResult fourth_result;
+  assert(localization.Process(fourth_frame, &fourth_result).ok());
+  assert(fourth_result.relocalization.active);
+  assert(fourth_result.relocalization.phase ==
+         rm_nav::localization::RelocalizationPhase::kSearching);
+  assert(fourth_result.relocalization.stabilization_failed);
+  assert(!fourth_result.relocalization.map_to_odom_blending_active);
+  assert(PoseDistance(fourth_result.map_to_odom, first_result.map_to_odom) < 1.0e-4F);
 
   std::cout << "test_localization_recovery passed\n";
   return 0;

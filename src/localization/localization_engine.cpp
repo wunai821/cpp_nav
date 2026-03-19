@@ -43,6 +43,7 @@ common::Status LocalizationEngine::Initialize(
   consecutive_failures_ = 0;
   has_latest_odom_ = false;
   has_trusted_map_to_odom_ = false;
+  last_trusted_map_to_base_ = {};
   static_map_ = {};
 
   ScanMatchConfig matcher_config;
@@ -169,26 +170,36 @@ common::Status LocalizationEngine::Process(const data::SyncedFrame& frame,
   const data::Pose3f odom_to_base =
       has_latest_odom_ ? OdomToBaseFromState(latest_odom_.ReadSnapshot())
                        : previous.odom_to_base;
-  const bool relocalization_mode =
-      consecutive_failures_ >=
-      static_cast<std::uint32_t>(std::max(1, config_.relocalization_failure_threshold));
+  const std::uint32_t relocalization_threshold = static_cast<std::uint32_t>(
+      std::max(1, config_.relocalization_failure_threshold));
+  relocalization_manager_.UpdateLockState(frame.stamp,
+                                          consecutive_failures_ >= relocalization_threshold);
+  result->relocalization = relocalization_manager_.CurrentStatus(frame.stamp);
+  const bool coarse_relocalization_mode =
+      result->relocalization.phase == RelocalizationPhase::kLostLock ||
+      result->relocalization.phase == RelocalizationPhase::kSearching;
+  const bool stabilization_mode =
+      result->relocalization.phase == RelocalizationPhase::kStabilizing;
   const data::Pose3f predicted_map_to_base =
-      relocalization_mode ? RelocalizationPrediction(frame.stamp, odom_to_base)
-                          : PredictedMapToBase(frame.stamp, odom_to_base);
+      coarse_relocalization_mode ? RelocalizationPrediction(frame.stamp, odom_to_base)
+                                 : PredictedMapToBase(frame.stamp, odom_to_base);
+  const data::Pose3f last_trusted_guess =
+      last_trusted_map_to_base_.is_valid ? last_trusted_map_to_base_
+                                         : RelocalizationPrediction(frame.stamp, odom_to_base);
 
   ScanMatchResult match;
   common::Status match_status = common::Status::NotReady("scan matcher not configured");
   const bool light_match_mode =
-      !relocalization_mode &&
+      !coarse_relocalization_mode && !stabilization_mode &&
       last_matcher_latency_ns_ >
       static_cast<common::TimeNs>(config_.slow_match_threshold_ms) * 1000000LL;
-  result->light_match_mode = !relocalization_mode && light_match_mode;
+  result->light_match_mode = light_match_mode;
   if (config_.enabled && static_map_.global_map_loaded && matcher_ != nullptr) {
-    if (relocalization_mode) {
+    if (coarse_relocalization_mode) {
       const auto coarse_fallback_guess = initial_pose_provider_.MakeInitialPose(frame.stamp);
-      auto status = relocalization_manager_.Attempt(static_map_, frame.lidar, predicted_map_to_base,
-                                                    coarse_fallback_guess, frame.stamp, &match,
-                                                    &result->relocalization);
+      auto status = relocalization_manager_.Attempt(
+          static_map_, frame.lidar, predicted_map_to_base, last_trusted_guess,
+          coarse_fallback_guess, frame.stamp, &match, &result->relocalization);
       if (!status.ok()) {
         return status;
       }
@@ -212,7 +223,10 @@ common::Status LocalizationEngine::Process(const data::SyncedFrame& frame,
       match_status = matcher_->Match(static_map_, scan, predicted_map_to_base, &match);
       result->matcher_latency_ns = common::NowNs() - matcher_begin_ns;
       last_matcher_latency_ns_ = result->matcher_latency_ns;
+      result->relocalization = relocalization_manager_.CurrentStatus(frame.stamp);
     }
+  } else {
+    result->relocalization = relocalization_manager_.CurrentStatus(frame.stamp);
   }
 
   if (match_status.ok() && match.converged) {
@@ -233,6 +247,7 @@ common::Status LocalizationEngine::Process(const data::SyncedFrame& frame,
   result->map_to_base.child_frame = tf::kBaseLinkFrame;
   result->map_to_base.stamp = frame.stamp;
   result->map_to_base.is_valid = true;
+  const data::Pose3f matched_map_to_base = result->map_to_base;
 
   auto status =
       map_odom_fuser_.Fuse(result->odom_to_base, result->map_to_base, &result->map_to_odom);
@@ -242,14 +257,33 @@ common::Status LocalizationEngine::Process(const data::SyncedFrame& frame,
   result->map_to_odom.stamp = frame.stamp;
 
   const data::Pose3f quality_reference_pose =
-      relocalization_mode ? predicted_map_to_base : previous.map_to_base;
+      coarse_relocalization_mode ? predicted_map_to_base : previous.map_to_base;
+  const bool relocalization_match_succeeded =
+      result->relocalization.attempted && result->relocalization.succeeded;
   result->status = quality_estimator_.Evaluate(quality_reference_pose, match,
                                                consecutive_failures_,
                                                static_map_.global_map_loaded,
-                                               relocalization_mode &&
-                                                   result->relocalization.succeeded);
+                                               relocalization_match_succeeded);
+  if (relocalization_match_succeeded) {
+    relocalization_manager_.SetPendingMapToOdomTarget(result->map_to_odom);
+  }
+  if (relocalization_manager_.has_pending_map_to_odom_target()) {
+    const data::Pose3f map_to_odom_reference =
+        previous.map_to_odom.is_valid ? previous.map_to_odom : result->map_to_odom;
+    result->map_to_odom = relocalization_manager_.BlendMapToOdomTarget(map_to_odom_reference);
+    result->map_to_odom.stamp = frame.stamp;
+    result->map_to_base = tf::Compose(result->map_to_odom, result->odom_to_base);
+    result->map_to_base.reference_frame = tf::kMapFrame;
+    result->map_to_base.child_frame = tf::kBaseLinkFrame;
+    result->map_to_base.stamp = frame.stamp;
+    result->map_to_base.is_valid = true;
+  }
+
+  const bool bypass_map_to_odom_guard =
+      relocalization_match_succeeded || relocalization_manager_.stabilizing() ||
+      relocalization_manager_.has_pending_map_to_odom_target();
   if (previous.map_to_odom.is_valid &&
-      !(relocalization_mode && result->relocalization.succeeded) &&
+      !bypass_map_to_odom_guard &&
       !IsMapToOdomUpdateStable(previous.map_to_odom, result->map_to_odom)) {
     result->map_to_odom = previous.map_to_odom;
     result->map_to_odom.stamp = frame.stamp;
@@ -258,9 +292,39 @@ common::Status LocalizationEngine::Process(const data::SyncedFrame& frame,
     result->status.pose_trusted = false;
     result->status.converged = false;
     result->status.consecutive_failures = ++consecutive_failures_;
-  } else if (result->status.pose_trusted) {
+  }
+
+  if (relocalization_manager_.stabilizing()) {
+    relocalization_manager_.RecordStabilizationObservation(frame.stamp, matched_map_to_base,
+                                                           result->status.pose_trusted,
+                                                           &result->relocalization);
+    if (result->relocalization.stabilization_failed) {
+      const data::Pose3f fallback_map_to_odom =
+          has_trusted_map_to_odom_ && last_trusted_map_to_odom_.is_valid
+              ? last_trusted_map_to_odom_
+              : (previous.map_to_odom.is_valid ? previous.map_to_odom : result->map_to_odom);
+      result->map_to_odom = fallback_map_to_odom;
+      result->map_to_odom.stamp = frame.stamp;
+      result->map_to_base = tf::Compose(result->map_to_odom, result->odom_to_base);
+      result->map_to_base.reference_frame = tf::kMapFrame;
+      result->map_to_base.child_frame = tf::kBaseLinkFrame;
+      result->map_to_base.stamp = frame.stamp;
+      result->map_to_base.is_valid = true;
+      result->status.pose_trusted = false;
+      result->status.converged = false;
+    }
+    if (relocalization_manager_.stabilizing()) {
+      result->status.pose_trusted = false;
+    }
+  } else {
+    result->relocalization = relocalization_manager_.CurrentStatus(frame.stamp);
+  }
+
+  if (result->status.pose_trusted) {
+    last_trusted_map_to_base_ = result->map_to_base;
     last_trusted_map_to_odom_ = result->map_to_odom;
     has_trusted_map_to_odom_ = true;
+    relocalization_manager_.SetLastTrustedPose(result->map_to_base);
   }
   result->processing_latency_ns = common::NowNs() - begin_ns;
 

@@ -88,6 +88,7 @@ class LocalizationEngine {
   common::TimeNs last_matcher_latency_ns_{0};
   bool matcher_light_mode_active_{false};
   bool has_latest_odom_{false};
+  data::Pose3f last_trusted_map_to_base_{};
   data::Pose3f last_trusted_map_to_odom_{};
   bool has_trusted_map_to_odom_{false};
 };

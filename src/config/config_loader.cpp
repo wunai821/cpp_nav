@@ -397,6 +397,38 @@ common::Status ConfigLoader::LoadFromDirectory(
     result.localization.relocalization_yaw_search_step_rad =
         GetDouble(merged_values, "localization.relocalization_yaw_search_step_rad",
                   result.localization.relocalization_yaw_search_step_rad);
+    result.localization.relocalization_stabilization_frames =
+        GetInt(merged_values, "localization.relocalization_stabilization_frames",
+               result.localization.relocalization_stabilization_frames);
+    result.localization.relocalization_stabilization_time_ms =
+        GetInt(merged_values, "localization.relocalization_stabilization_time_ms",
+               result.localization.relocalization_stabilization_time_ms);
+    result.localization.relocalization_map_to_odom_apply_translation_step_m =
+        GetDouble(merged_values,
+                  "localization.relocalization_map_to_odom_apply_translation_step_m",
+                  result.localization.relocalization_map_to_odom_apply_translation_step_m);
+    result.localization.relocalization_map_to_odom_apply_yaw_step_rad =
+        GetDouble(merged_values,
+                  "localization.relocalization_map_to_odom_apply_yaw_step_rad",
+                  result.localization.relocalization_map_to_odom_apply_yaw_step_rad);
+    result.localization.relocalization_recovery_spin_wz_radps =
+        GetDouble(merged_values, "localization.relocalization_recovery_spin_wz_radps",
+                  result.localization.relocalization_recovery_spin_wz_radps);
+    result.localization.relocalization_recovery_backoff_vx_mps =
+        GetDouble(merged_values, "localization.relocalization_recovery_backoff_vx_mps",
+                  result.localization.relocalization_recovery_backoff_vx_mps);
+    result.localization.relocalization_recovery_backoff_ticks =
+        GetInt(merged_values, "localization.relocalization_recovery_backoff_ticks",
+               result.localization.relocalization_recovery_backoff_ticks);
+    result.localization.relocalization_ambiguity_score_gap =
+        GetDouble(merged_values, "localization.relocalization_ambiguity_score_gap",
+                  result.localization.relocalization_ambiguity_score_gap);
+    result.localization.relocalization_ambiguity_translation_m =
+        GetDouble(merged_values, "localization.relocalization_ambiguity_translation_m",
+                  result.localization.relocalization_ambiguity_translation_m);
+    result.localization.relocalization_ambiguity_yaw_rad =
+        GetDouble(merged_values, "localization.relocalization_ambiguity_yaw_rad",
+                  result.localization.relocalization_ambiguity_yaw_rad);
     result.localization.map_to_odom_guard_translation_m =
         GetDouble(merged_values, "localization.map_to_odom_guard_translation_m",
                   result.localization.map_to_odom_guard_translation_m);

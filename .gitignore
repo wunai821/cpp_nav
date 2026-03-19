@@ -1,20 +1,23 @@
 # =========================
-# 1. 编译产生的中间文件和产物
+# 1. 编译中间文件和二进制产物
 # =========================
 *.o
 *.obj
+*.lo
 *.out
 *.exe
 *.app
 *.i
+*.ii
 *.s
 
-# 预编译头文件
+# 预编译头
 *.gch
 *.pch
 
-# 动态链接库和静态链接库
+# 动态/静态库
 *.so
+*.so.*
 *.dylib
 *.dll
 *.a
@@ -22,68 +25,94 @@
 *.la
 *.lai
 
+# 可执行文件调试符号/转储
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
 # =========================
-# 2. 常见的构建目录
+# 2. 构建目录（统一只允许出现在 build/）
 # =========================
-build/
+/build/
+**/build/
 bin/
 out/
 Debug/
 Release/
+debug/
+release/
 x64/
 x86/
-
-# 根目录构建产物：当前工程会把常用工具直接输出到仓库根目录，
-# 这些文件属于编译生成物，不应进入版本管理。
-/rm_nav_main
-/mock_planner_generator
-/warmup_mapping_tool
-/deskew_viewer
-/replay_player
-/l1_driver_test
-/l1_record_tool
-/imu_driver_test
-/imu_record_tool
-/stm32_bridge_test
+cmake-build-*/
+_deps/
 
 # =========================
-# 3. CMake 专属生成文件
+# 3. CMake 生成文件
 # =========================
 CMakeCache.txt
 CMakeFiles/
-Makefile
 cmake_install.cmake
 install_manifest.txt
-compile_commands.json
 CTestTestfile.cmake
-_deps/
-cmake-build-*/
+compile_commands.json
+Makefile
 
 # =========================
-# 4. IDE 和编辑器配置文件
+# 4. 运行产物和本地数据
 # =========================
-# VS Code
+/logs/
+**/logs/
+/maps/
+**/maps/
+
+# 可选：如果你们还有录包、回放、运行时输出目录，也建议一起忽略
+/recordings/
+**/recordings/
+/output/
+**/output/
+/runtime/
+**/runtime/
+/tmp/
+**/tmp/
+
+# 日志文件
+*.log
+
+# =========================
+# 5. 当前已知会误落到仓库根目录的可执行文件
+#    这些先显式拦住，后续应通过 CMake 改到 build/ 内
+# =========================
+/rm_nav_main
+/mock_planner_generator
+/warmup_mapping_tool
+/l1_driver_test
+/imu_driver_test
+/replay_player
+/deskew_viewer
+/stm32_bridge_test
+
+# 如果还有同类工具，也一起补全
+/l1_record_tool
+/imu_record_tool
+
+# =========================
+# 6. IDE / 编辑器
+# =========================
 .vscode/
 *.code-workspace
-
-# Visual Studio
 .vs/
 *.user
 *.suo
 *.sln.docstates
-
-# CLion / IntelliJ
 .idea/
 
 # =========================
-# 5. 操作系统自动生成的文件
+# 7. 操作系统文件
 # =========================
-# macOS
 .DS_Store
 .AppleDouble
 .LSOverride
-
-# Windows
 Thumbs.db
 ehthumbs.db
 Desktop.ini
