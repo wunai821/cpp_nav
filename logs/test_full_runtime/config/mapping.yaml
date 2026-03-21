@@ -1,5 +1,5 @@
 mapping:
   enabled: false
   loop_hz: 8
-  output_dir: logs/test_full_runtime/output
+  active_dir: /home/naiwu/rm_sentinel_nav/maps/combat/active
   waypoint_path: warmup_waypoints.txt

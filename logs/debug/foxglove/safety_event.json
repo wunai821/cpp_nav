@@ -1,6 +1,6 @@
 {
-  "code": "FAILSAFE_OVERRIDE",
+  "code": "POSE_LOST",
   "severity": "CRITICAL",
-  "message": "hold timeout escalated to failsafe",
-  "stamp_ns": 15506318725967
+  "message": "localization loss escalated to failsafe",
+  "stamp_ns": 43844260885193
 }

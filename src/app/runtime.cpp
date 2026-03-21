@@ -372,41 +372,13 @@ bool ResolveCombatLocalizationConfig(const config::LoadedConfig& loaded_config,
   }
 
   const auto active_dir =
-      ResolveConfigAsset(loaded_config.config_dir, loaded_config.mapping.output_dir);
+      ResolveConfigAsset(loaded_config.config_dir, loaded_config.mapping.active_dir);
   if (MapArtifactsExist(active_dir)) {
     localization_config->global_map_pcd_path = (active_dir / "global_map.pcd").string();
     localization_config->occupancy_path = (active_dir / "occupancy.bin").string();
     localization_config->map_meta_path = (active_dir / "map_meta.json").string();
     if (source_label != nullptr) {
       *source_label = "active";
-    }
-    return true;
-  }
-
-  const std::filesystem::path last_good_dir =
-      loaded_config.mapping.last_good_dir.empty()
-          ? (active_dir.parent_path() / "last_good")
-          : ResolveConfigAsset(loaded_config.config_dir, loaded_config.mapping.last_good_dir);
-  if (MapArtifactsExist(last_good_dir)) {
-    localization_config->global_map_pcd_path = (last_good_dir / "global_map.pcd").string();
-    localization_config->occupancy_path = (last_good_dir / "occupancy.bin").string();
-    localization_config->map_meta_path = (last_good_dir / "map_meta.json").string();
-    if (source_label != nullptr) {
-      *source_label = "last_good";
-    }
-    return true;
-  }
-
-  const auto configured_map =
-      ResolveConfigAsset(loaded_config.config_dir, localization_config->global_map_pcd_path);
-  const auto configured_occupancy =
-      ResolveConfigAsset(loaded_config.config_dir, localization_config->occupancy_path);
-  const auto configured_meta =
-      ResolveConfigAsset(loaded_config.config_dir, localization_config->map_meta_path);
-  if (std::filesystem::exists(configured_map) && std::filesystem::exists(configured_occupancy) &&
-      std::filesystem::exists(configured_meta)) {
-    if (source_label != nullptr) {
-      *source_label = "configured";
     }
     return true;
   }
@@ -1667,9 +1639,6 @@ common::Status Runtime::ConfigurePipeline() {
         utils::LogWarn("runtime", "no usable combat map found; runtime will enter failsafe");
         status = common::Status::Ok();
       } else {
-        if (source_label == "last_good") {
-          utils::LogWarn("runtime", "active combat map unavailable, falling back to last_good");
-        }
         combat_map_unavailable_.store(false, std::memory_order_release);
         status = InitializeCombatPipeline(localization_config, loaded_config_.spawn);
       }
@@ -2712,9 +2681,6 @@ common::Status Runtime::InitializeCombatPipelineFromSavedMap() {
     combat_map_unavailable_.store(true, std::memory_order_release);
     return common::Status::Unavailable("no usable combat map available");
   }
-  if (source_label == "last_good") {
-    utils::LogWarn("runtime", "active warmup map unavailable, falling back to last_good");
-  }
   combat_map_unavailable_.store(false, std::memory_order_release);
 
   config::SpawnConfig spawn_config = loaded_config_.spawn;
@@ -2732,7 +2698,8 @@ fsm::NavFsmContext Runtime::BuildFsmContext(bool referee_changed) const {
   const int manual_mode_selector = loaded_config_.system.manual_mode_selector;
   const bool map_saved = map_saved_.load(std::memory_order_acquire);
   const bool combat_ready = combat_pipeline_ready_.load(std::memory_order_acquire);
-  context.save_requested = mapping_save_requested_.load(std::memory_order_acquire);
+  context.save_requested =
+      mapping_save_requested_.load(std::memory_order_acquire) && !map_saved;
   context.map_saved = map_saved;
   context.combat_ready = combat_ready;
   context.map_loaded = context.combat_ready && localization_.map_loaded();
@@ -2749,7 +2716,7 @@ fsm::NavFsmContext Runtime::BuildFsmContext(bool referee_changed) const {
       save_failure_tag == MappingSaveFailureTag::kStorageSwitchFailed;
 
   if (manual_mode_selector == 0) {
-    context.mapping_enabled = true;
+    context.mapping_enabled = !map_saved;
     context.combat_ready = false;
     context.map_loaded = false;
   } else if (manual_mode_selector == 1) {
@@ -2943,7 +2910,7 @@ common::Status Runtime::SaveMappingArtifacts(localization::StaticMap* exported_m
   localization::StaticMap local_exported_map;
   mapping::MapSaveFailureKind failure_kind{mapping::MapSaveFailureKind::kNone};
   const auto status = mapping_engine_.SaveMap(
-      ResolveConfigAsset(loaded_config_.config_dir, loaded_config_.mapping.output_dir).string(),
+      ResolveConfigAsset(loaded_config_.config_dir, loaded_config_.mapping.active_dir).string(),
       exported_map != nullptr ? exported_map : &local_exported_map, &failure_kind);
   if (!status.ok()) {
     mapping_save_failure_tag_.store(static_cast<int>(ToRuntimeFailureTag(failure_kind)),
@@ -2960,6 +2927,7 @@ common::Status Runtime::SaveMappingArtifacts(localization::StaticMap* exported_m
     return status;
   }
   map_saved_.store(true, std::memory_order_release);
+  mapping_save_requested_.store(false, std::memory_order_release);
   mapping_save_failure_tag_.store(static_cast<int>(MappingSaveFailureTag::kNone),
                                   std::memory_order_release);
   combat_map_unavailable_.store(false, std::memory_order_release);

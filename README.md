@@ -90,8 +90,10 @@ cmake --build build
 
 最常用的模式：
 
+- `bringup_mode: none`
+  正式运行默认值，按比赛主链配置启动，不额外切到可视化预设
 - `bringup_mode: lidar_view`
-  只拉起真雷达可视化最小链，方便调 `base_link / laser_link / footprint / current_scan / local_costmap`
+  只在需要看真雷达时临时切换；它会拉起真雷达可视化最小链，方便调 `base_link / laser_link / footprint / current_scan / local_costmap`
 - `manual_mode_selector: 0`
   只跑热身建图链：`MODE_WARMUP + MODE_SAVE`
 - `manual_mode_selector: 1`
@@ -245,11 +247,17 @@ mapping:
 - `MODE_WARMUP`
 - 固定 waypoint 巡航
 - `MODE_SAVE`
-- 先写 `staging`、做地图质检，再切换 `active / last_good`
+- 先写 `staging`、做地图质检，再切换 `active`
 
 ### 5. 跑真雷达 bring-up
 
-先把 [system.yaml](config/system.yaml) 里设成：
+默认 [system.yaml](config/system.yaml) 是：
+
+```yaml
+bringup_mode: none
+```
+
+需要跑真雷达 bring-up 时，再临时改成：
 
 ```yaml
 bringup_mode: lidar_view
@@ -311,7 +319,7 @@ sudo ./rm_nav_main --config config/
 
 ### 热身建图导出
 
-输出目录由 [mapping.yaml](config/mapping.yaml) 的 `mapping.output_dir` 决定，核心产物是：
+输出目录由 [mapping.yaml](config/mapping.yaml) 的 `mapping.active_dir` 决定，核心产物是：
 
 - `global_map.pcd`
 - `occupancy.bin`

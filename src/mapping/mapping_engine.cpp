@@ -144,7 +144,7 @@ data::Pose3f PredictPoseFromExternalDelta(const data::Pose3f& previous_external_
 MapStorageLayout BuildStorageLayout(const config::MappingConfig& config,
                                     const std::string& active_dir_override) {
   const std::filesystem::path active_dir =
-      active_dir_override.empty() ? std::filesystem::path(config.output_dir)
+      active_dir_override.empty() ? std::filesystem::path(config.active_dir)
                                   : std::filesystem::path(active_dir_override);
   const auto parent_dir = active_dir.parent_path();
 
@@ -152,8 +152,6 @@ MapStorageLayout BuildStorageLayout(const config::MappingConfig& config,
   layout.active_dir = active_dir;
   layout.staging_dir = config.staging_dir.empty() ? (parent_dir / "staging")
                                                   : std::filesystem::path(config.staging_dir);
-  layout.last_good_dir = config.last_good_dir.empty() ? (parent_dir / "last_good")
-                                                      : std::filesystem::path(config.last_good_dir);
   layout.failed_dir = config.failed_dir.empty() ? (parent_dir / "failed")
                                                 : std::filesystem::path(config.failed_dir);
   return layout;
@@ -297,7 +295,7 @@ common::Status MappingEngine::BuildGridMap2D(data::GridMap2D* grid_map) const {
   return projector_.Project(builder_.GlobalPoints(), keyframes_, grid_map);
 }
 
-common::Status MappingEngine::SaveMap(const std::string& output_dir,
+common::Status MappingEngine::SaveMap(const std::string& active_dir_override,
                                       localization::StaticMap* exported_map,
                                       MapSaveFailureKind* failure_kind) const {
   if (!initialized_) {
@@ -310,9 +308,9 @@ common::Status MappingEngine::SaveMap(const std::string& output_dir,
   }
 
   const auto global_points = builder_.GlobalPoints();
-  const std::string resolved_output_dir =
-      output_dir.empty() ? config_.output_dir : output_dir;
-  const auto storage_layout = BuildStorageLayout(config_, resolved_output_dir);
+  const std::string resolved_active_dir =
+      active_dir_override.empty() ? config_.active_dir : active_dir_override;
+  const auto storage_layout = BuildStorageLayout(config_, resolved_active_dir);
   mapping::MapArtifactPaths artifacts;
   status = save_manager_.SaveAndActivate(storage_layout, config_, global_points, grid_map,
                                          trajectory_samples_,

@@ -2,7 +2,7 @@
 app_name: rm_nav_main  # 程序可执行名，用于日志、诊断和启动识别。
 version: 0.1.0  # 当前系统版本号，用于和构建产物及配置集对应。
 log_level: INFO  # 日志输出级别，可选例如 DEBUG/INFO/WARN/ERROR。
-bringup_mode: lidar_view  # 启动预设模式；none 表示按各模块原始配置运行，lidar_view 表示强制切到“真雷达可视化”预设，会自动关闭 mapping/localization、打开 WebSocket，并放宽自动退出时长。
+bringup_mode: none  # 启动预设模式；正式运行默认用 none，按各模块原始配置跑主链。需要看真雷达可视化时再临时切成 lidar_view；该预设会自动关闭 mapping/localization、打开 WebSocket，并放宽自动退出时长。
 auto_shutdown_ms: 600000  # 自动退出时间，单位毫秒；调试空转链路时可用于定时收尾。
 manual_mode_selector: -1 # 手动模式选择枚举；-1 表示自动 FSM，0 表示只走 MODE_WARMUP+MODE_SAVE，1 表示只走 MODE_COMBAT/GOTO_CENTER/HOLD_CENTER/RECENTER/RECOVERY。
 threads:  # 线程绑定配置，-1 表示不固定到特定 CPU 核心。

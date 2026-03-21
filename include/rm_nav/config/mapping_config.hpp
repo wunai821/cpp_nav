@@ -7,9 +7,8 @@ namespace rm_nav::config {
 struct MappingConfig {
   bool enabled{false};
   int loop_hz{10};
-  std::string output_dir{"../maps/warmup/active"};
+  std::string active_dir{"../maps/warmup/active"};
   std::string staging_dir{};
-  std::string last_good_dir{};
   std::string failed_dir{};
   std::string waypoint_path{"warmup_waypoints.txt"};
   double route_speed_mps{0.7};

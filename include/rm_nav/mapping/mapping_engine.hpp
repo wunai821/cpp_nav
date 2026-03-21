@@ -61,7 +61,7 @@ class MappingEngine {
   LoopCorrectionDecision LatestLoopCorrection() const { return latest_loop_correction_; }
   data::Pose3f AppliedPoseCorrection() const { return applied_pose_correction_; }
   MappingResult LatestResult() const { return latest_result_; }
-  common::Status SaveMap(const std::string& output_dir,
+  common::Status SaveMap(const std::string& active_dir_override,
                          localization::StaticMap* exported_map = nullptr,
                          MapSaveFailureKind* failure_kind = nullptr) const;
 

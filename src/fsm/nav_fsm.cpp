@@ -193,7 +193,7 @@ NavFsmSnapshot NavFsm::Update(common::TimePoint stamp, const NavFsmContext& cont
                                          "map storage switch failed");
       } else if (context.combat_ready && context.map_loaded) {
         Transition(stamp, NavState::kModeCombat, NavEventCode::kMapLoadSuccess,
-                   "fallback map load success");
+                   "active map load success");
       } else if (context.map_unavailable) {
         Transition(stamp, NavState::kIdle, NavEventCode::kMapUnavailable,
                    "no usable map available");

@@ -1,9 +1,9 @@
 # 定位配置：定义静态地图输入、匹配器选择以及定位质量判定阈值。
 localization:  # 定位主配置，用于地图加载、scan matcher 和 map->odom 修正。
   enabled: false  # 是否启用定位模块。
-  occupancy_path: ../maps/combat/active/occupancy.bin  # 占据栅格地图文件路径。
-  global_map_pcd_path: ../maps/combat/active/global_map.pcd  # 全局点云地图文件路径。
-  map_meta_path: ../maps/combat/active/map_meta.json  # 地图元信息文件路径，包含分辨率和原点等描述。
+  occupancy_path: ../maps/combat/active/occupancy.bin  # 占据栅格地图文件路径；保留给直接 MapLoader/离线工具使用，runtime 正赛主链现在只认 mapping.active_dir。
+  global_map_pcd_path: ../maps/combat/active/global_map.pcd  # 全局点云地图文件路径；保留给直接 MapLoader/离线工具使用，不再作为 runtime 的手动切图入口。
+  map_meta_path: ../maps/combat/active/map_meta.json  # 地图元信息文件路径；保留给直接 MapLoader/离线工具使用，runtime 会从 mapping.active_dir 覆盖这三项。
   matcher: icp  # 当前启用的 scan matcher 类型，例如 icp 或 ndt。
   max_iterations: 8  # 匹配器每帧最大迭代次数。
   correspondence_distance_m: 0.8  # 建立点对应关系的最大距离阈值，单位米。

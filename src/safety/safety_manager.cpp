@@ -23,6 +23,37 @@ data::ChassisCmd BrakeCommand(common::TimePoint stamp) {
   return cmd;
 }
 
+CommandGateReason FailsafeReason(const SafetyResult& result) {
+  if (!result.communication_ok) {
+    return CommandGateReason::kCommunicationLost;
+  }
+  if (!result.chassis_feedback_ok) {
+    return CommandGateReason::kChassisFeedbackLost;
+  }
+  if (!result.costmap_valid) {
+    return CommandGateReason::kCostmapInvalid;
+  }
+  if (!result.costmap_fresh) {
+    return CommandGateReason::kCostmapStale;
+  }
+  if (result.planner_cmd_timed_out) {
+    return CommandGateReason::kPlannerTimeout;
+  }
+  if (!result.localization_quality_ok) {
+    return CommandGateReason::kLocalizationDegraded;
+  }
+  if (!result.planner_status_ok) {
+    return CommandGateReason::kPlannerFailed;
+  }
+  if (result.collision_type == CollisionType::kStatic) {
+    return CommandGateReason::kStaticCollision;
+  }
+  if (result.collision_type == CollisionType::kDynamic) {
+    return CommandGateReason::kDynamicCollision;
+  }
+  return CommandGateReason::kStateBlocked;
+}
+
 bool CostmapFresh(const data::GridMap2D* costmap, common::TimePoint stamp,
                   const config::SafetyConfig& config) {
   if (costmap == nullptr || costmap->stamp == common::TimePoint{} || stamp == common::TimePoint{}) {
@@ -163,8 +194,8 @@ common::Status SafetyManager::Evaluate(const SafetyInput& input, SafetyResult* r
   if (input.force_failsafe || decision.state == SafetyState::kFailsafe) {
     result->authority = SafetyCommandAuthority::kFailsafe;
     result->gated_cmd = result->failsafe_cmd;
-    result->gate_reason = input.force_failsafe ? CommandGateReason::kFailsafeOverride
-                                               : CommandGateReason::kStateBlocked;
+    result->gate_reason =
+        input.force_failsafe ? CommandGateReason::kFailsafeOverride : FailsafeReason(*result);
     command_gate_.Reset();
     return common::Status::Ok();
   }

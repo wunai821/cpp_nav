@@ -20,6 +20,7 @@ int main() {
   const auto root = std::filesystem::current_path();
   const auto test_root = root / "logs" / "test_full_runtime";
   const auto config_dir = test_root / "config";
+  const auto active_map_dir = root / "maps" / "combat" / "active";
   const auto watchdog_file = root / "logs" / "watchdog" / "process_heartbeat.json";
   const auto runtime_state_file = root / "logs" / "crash" / "last_runtime_state.json";
   std::filesystem::create_directories(config_dir);
@@ -133,7 +134,7 @@ int main() {
             "mapping:\n"
             "  enabled: false\n"
             "  loop_hz: 8\n"
-            "  output_dir: logs/test_full_runtime/output\n"
+            "  active_dir: " + active_map_dir.string() + "\n"
             "  waypoint_path: warmup_waypoints.txt\n");
 
   rm_nav::app::Runtime runtime;

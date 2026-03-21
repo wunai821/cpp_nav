@@ -441,12 +441,10 @@ common::Status ConfigLoader::LoadFromDirectory(
         GetBool(merged_values, "mapping.enabled", result.mapping.enabled);
     result.mapping.loop_hz =
         GetInt(merged_values, "mapping.loop_hz", result.mapping.loop_hz);
-    result.mapping.output_dir =
-        GetString(merged_values, "mapping.output_dir", result.mapping.output_dir);
+    result.mapping.active_dir =
+        GetString(merged_values, "mapping.active_dir", result.mapping.active_dir);
     result.mapping.staging_dir =
         GetString(merged_values, "mapping.staging_dir", result.mapping.staging_dir);
-    result.mapping.last_good_dir =
-        GetString(merged_values, "mapping.last_good_dir", result.mapping.last_good_dir);
     result.mapping.failed_dir =
         GetString(merged_values, "mapping.failed_dir", result.mapping.failed_dir);
     result.mapping.waypoint_path =
@@ -960,7 +958,7 @@ std::string ConfigLoader::BuildSummary(const LoadedConfig& loaded_config) const 
           << ", slow_match_ms=" << loaded_config.localization.slow_match_threshold_ms << "]"
           << ", mapping=[enabled=" << (loaded_config.mapping.enabled ? "true" : "false")
           << ", loop_hz=" << loaded_config.mapping.loop_hz
-          << ", output_dir=" << loaded_config.mapping.output_dir << "]"
+          << ", active_dir=" << loaded_config.mapping.active_dir << "]"
           << ", spawn=[" << loaded_config.spawn.x_m << ", " << loaded_config.spawn.y_m
           << ", " << loaded_config.spawn.theta_rad << "]"
           << ", planner_hz=" << loaded_config.planner.loop_hz

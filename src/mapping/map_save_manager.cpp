@@ -49,8 +49,7 @@ common::Status MapSaveManager::SaveAndActivate(const MapStorageLayout& layout,
                                                MapArtifactPaths* artifact_paths,
                                                MapValidationReport* validation_report,
                                                MapSaveFailureKind* failure_kind) const {
-  if (layout.active_dir.empty() || layout.staging_dir.empty() || layout.last_good_dir.empty() ||
-      layout.failed_dir.empty()) {
+  if (layout.active_dir.empty() || layout.staging_dir.empty() || layout.failed_dir.empty()) {
     return common::Status::InvalidArgument("map storage layout is incomplete");
   }
   if (failure_kind != nullptr) {
@@ -101,14 +100,7 @@ common::Status MapSaveManager::SaveAndActivate(const MapStorageLayout& layout,
   }
 
   if (std::filesystem::exists(layout.active_dir)) {
-    status = RemoveTreeIfExists(layout.last_good_dir);
-    if (!status.ok()) {
-      if (failure_kind != nullptr) {
-        *failure_kind = MapSaveFailureKind::kStorageSwitchFailed;
-      }
-      return status;
-    }
-    status = RenameTree(layout.active_dir, layout.last_good_dir);
+    status = RemoveTreeIfExists(layout.active_dir);
     if (!status.ok()) {
       if (failure_kind != nullptr) {
         *failure_kind = MapSaveFailureKind::kStorageSwitchFailed;

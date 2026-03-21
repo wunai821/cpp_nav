@@ -277,6 +277,45 @@ int main() {
     input.mode_transition_active = true;
     rm_nav::safety::SafetyResult result;
     assert(manager.Evaluate(input, &result).ok());
+    assert(result.state == rm_nav::safety::SafetyState::kHold);
+    assert(result.authority == rm_nav::safety::SafetyCommandAuthority::kFreeze);
+    assert(result.gate_reason == rm_nav::safety::CommandGateReason::kModeTransition);
+  }
+
+  assert(manager.Configure(config).ok());
+
+  {
+    const auto stamp = base_time + std::chrono::milliseconds(820);
+    pose = MakePose(stamp);
+    costmap = MakeCostmap(stamp, false);
+    cmd = MakeMotionCmd(stamp);
+
+    auto input = MakeBaseInput(stamp, &pose, &costmap, &cmd, &no_obstacles);
+    input.mode_transition_active = true;
+    input.last_communication_rx_ns = rm_nav::common::ToNanoseconds(base_time);
+    input.last_chassis_feedback_stamp = base_time;
+    rm_nav::safety::SafetyResult result;
+    assert(manager.Evaluate(input, &result).ok());
+    assert(result.state == rm_nav::safety::SafetyState::kFailsafe);
+    assert(result.authority == rm_nav::safety::SafetyCommandAuthority::kFailsafe);
+    assert(result.gate_reason == rm_nav::safety::CommandGateReason::kCommunicationLost);
+  }
+
+  assert(manager.Configure(config).ok());
+
+  {
+    const auto stamp = base_time + std::chrono::milliseconds(840);
+    pose = MakePose(stamp);
+    costmap = MakeCostmap(stamp, false);
+    cmd = MakeMotionCmd(stamp);
+
+    auto input = MakeBaseInput(stamp, &pose, &costmap, &cmd, &no_obstacles);
+    input.mode_transition_active = true;
+    input.localization_degraded = true;
+    input.localization_pose_trusted = false;
+    rm_nav::safety::SafetyResult result;
+    assert(manager.Evaluate(input, &result).ok());
+    assert(result.state == rm_nav::safety::SafetyState::kHold);
     assert(result.authority == rm_nav::safety::SafetyCommandAuthority::kFreeze);
     assert(result.gate_reason == rm_nav::safety::CommandGateReason::kModeTransition);
   }

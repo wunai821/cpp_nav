@@ -4,7 +4,7 @@
 
 ## 导出目录
 
-默认由 [mapping.yaml](../config/mapping.yaml) 的 `mapping.output_dir` 控制。
+默认由 [mapping.yaml](../config/mapping.yaml) 的 `mapping.active_dir` 控制。
 
 每次成功导图后，`active` 目录内至少包含：
 
@@ -18,9 +18,8 @@
 
 1. 先把新图写到 `staging`
 2. 对新图生成 `map_validation_report.json`
-3. 校验通过后，把旧 `active` 旋转到 `last_good`
-4. 再把 `staging` 切到 `active`
-5. 如果校验失败，则把 `staging` 旋转到 `failed`
+3. 校验通过后，把 `staging` 切到 `active`
+4. 如果校验失败，则把 `staging` 旋转到 `failed`
 
 ## `global_map.pcd`
 

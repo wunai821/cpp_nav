@@ -1,7 +1,7 @@
 mapping:
   enabled: true
   loop_hz: 8
-  output_dir: /home/naiwu/rm_sentinel_nav/logs/test_runtime_mapping_mode/output
+  active_dir: /home/naiwu/rm_sentinel_nav/logs/test_runtime_mapping_mode/output
   waypoint_path: /home/naiwu/rm_sentinel_nav/logs/test_runtime_mapping_mode/config/waypoints.txt
   route_speed_mps: 0.7
   route_reach_tolerance_m: 0.35

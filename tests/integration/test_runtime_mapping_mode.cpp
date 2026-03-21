@@ -134,7 +134,7 @@ int main() {
             std::string("mapping:\n") +
                 "  enabled: true\n"
                 "  loop_hz: 8\n"
-                "  output_dir: " + output_dir.string() + "\n"
+                "  active_dir: " + output_dir.string() + "\n"
                 "  waypoint_path: " + waypoint_path + "\n"
                 "  route_speed_mps: 0.7\n"
                 "  route_reach_tolerance_m: 0.35\n"

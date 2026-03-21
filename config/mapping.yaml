@@ -3,10 +3,9 @@
 mapping:
   enabled: false  # 是否启用 runtime 热身建图模式；独立 warmup_mapping_tool 不受该开关限制。
   loop_hz: 10  # 建图主循环频率，单位 Hz。
-  output_dir: ../maps/warmup/active  # 当前可用地图目录；通过质检的新图最终会切到这里。
+  active_dir: ../maps/warmup/active  # 当前唯一可用地图目录；通过质检的新图最终会切到这里。
   staging_dir: ../maps/warmup/staging  # 建图过程中的临时导出目录；先写 staging，再校验并切 active。
-  last_good_dir: ../maps/warmup/last_good  # 上一份通过质检的可回退地图目录；active 切换前会先备份到这里。
-  failed_dir: ../maps/warmup/failed  # 质检失败或保存失败时保留的坏图目录，便于现场排障。
+  failed_dir: ../maps/warmup/failed  # 质检失败或保存失败时保留的坏图目录；单地图模式下不会再维护上一张图回退目录。
   waypoint_path: warmup_waypoints.txt  # 固定巡航路径文件，相对当前 config 目录解析。
   route_speed_mps: 0.7  # 固定巡航时的目标移动速度，单位米每秒。
   route_reach_tolerance_m: 0.35  # 距离当前 waypoint 小于该值后切到下一个 waypoint，单位米。

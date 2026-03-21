@@ -31,6 +31,23 @@ common::Status FailoverPolicy::Configure(const config::SafetyConfig& config) {
   return common::Status::Ok();
 }
 
+namespace {
+
+void ResetLatchedFaultTimes(common::TimePoint* hold_issue_since, common::TimePoint* planner_issue_since,
+                            common::TimePoint* localization_issue_since) {
+  if (hold_issue_since != nullptr) {
+    *hold_issue_since = {};
+  }
+  if (planner_issue_since != nullptr) {
+    *planner_issue_since = {};
+  }
+  if (localization_issue_since != nullptr) {
+    *localization_issue_since = {};
+  }
+}
+
+}  // namespace
+
 void FailoverPolicy::UpdateLatchedTime(bool condition, common::TimePoint stamp,
                                        common::TimePoint* since) const {
   if (since == nullptr) {
@@ -148,13 +165,16 @@ SafetyPolicyDecision FailoverPolicy::Evaluate(const SafetyPolicyInput& input) {
         }
         break;
       case SafetyState::kFailsafe:
-        if (!input.start_signal_active && !input.navigation_requested) {
+        if (!input.start_signal_active || !input.arming_ready || !input.navigation_requested) {
           state_ = SafetyState::kIdle;
-          hold_issue_since_ = {};
-          planner_issue_since_ = {};
-          localization_issue_since_ = {};
-          ResetMissionTimer();
+        } else {
+          // Leave FAILSAFE conservatively: first fall back to HOLD, then require a later
+          // healthy cycle before motion can be re-enabled.
+          state_ = transient_hold ? SafetyState::kHold : SafetyState::kArmed;
         }
+        ResetLatchedFaultTimes(&hold_issue_since_, &planner_issue_since_,
+                               &localization_issue_since_);
+        ResetMissionTimer();
         break;
     }
   }

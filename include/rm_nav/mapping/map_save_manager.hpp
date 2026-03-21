@@ -23,7 +23,6 @@ enum class MapSaveFailureKind {
 struct MapStorageLayout {
   std::filesystem::path active_dir{};
   std::filesystem::path staging_dir{};
-  std::filesystem::path last_good_dir{};
   std::filesystem::path failed_dir{};
 };
 

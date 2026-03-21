@@ -70,6 +70,26 @@ int main() {
   snapshot = warmup_fsm.Update(rm_nav::common::Now(), warmup_context);
   assert(snapshot.state == rm_nav::fsm::NavState::kModeCombat);
 
+  rm_nav::fsm::NavFsm single_map_fsm;
+  rm_nav::fsm::NavFsmContext single_map_context;
+  single_map_context.mapping_enabled = true;
+  snapshot = single_map_fsm.Update(rm_nav::common::Now(), single_map_context);
+  snapshot = single_map_fsm.Update(rm_nav::common::Now(), single_map_context);
+  snapshot = single_map_fsm.Update(rm_nav::common::Now(), single_map_context);
+  assert(snapshot.state == rm_nav::fsm::NavState::kModeWarmup);
+  single_map_context.save_requested = true;
+  snapshot = single_map_fsm.Update(rm_nav::common::Now(), single_map_context);
+  assert(snapshot.state == rm_nav::fsm::NavState::kModeSave);
+  single_map_context.mapping_enabled = false;
+  single_map_context.save_requested = false;
+  single_map_context.map_saved = true;
+  single_map_context.map_loaded = false;
+  single_map_context.combat_ready = false;
+  snapshot = single_map_fsm.Update(rm_nav::common::Now(), single_map_context);
+  assert(snapshot.state == rm_nav::fsm::NavState::kIdle);
+  snapshot = single_map_fsm.Update(rm_nav::common::Now(), single_map_context);
+  assert(snapshot.state == rm_nav::fsm::NavState::kIdle);
+
   rm_nav::fsm::NavFsm save_failure_fsm;
   rm_nav::fsm::NavFsmContext save_failure_context;
   save_failure_context.mapping_enabled = true;
