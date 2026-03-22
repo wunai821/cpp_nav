@@ -441,6 +441,9 @@ common::Status ConfigLoader::LoadFromDirectory(
         GetBool(merged_values, "mapping.enabled", result.mapping.enabled);
     result.mapping.loop_hz =
         GetInt(merged_values, "mapping.loop_hz", result.mapping.loop_hz);
+    result.mapping.save_on_loop_closure_success =
+        GetBool(merged_values, "mapping.save_on_loop_closure_success",
+                result.mapping.save_on_loop_closure_success);
     result.mapping.active_dir =
         GetString(merged_values, "mapping.active_dir", result.mapping.active_dir);
     result.mapping.staging_dir =

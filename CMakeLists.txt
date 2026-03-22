@@ -23,7 +23,12 @@ endforeach()
 # =========================
 # Optional Unitree lidar SDK
 # =========================
-if(DEFINED ENV{UNITREE_LIDAR_SDK_ROOT})
+set(_RM_NAV_BUNDLED_UNITREE_LIDAR_SDK_ROOT
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/unitree_lidar_sdk")
+
+if(EXISTS "${_RM_NAV_BUNDLED_UNITREE_LIDAR_SDK_ROOT}/include/unitree_lidar_sdk.h")
+  set(_RM_NAV_UNITREE_LIDAR_SDK_DEFAULT "${_RM_NAV_BUNDLED_UNITREE_LIDAR_SDK_ROOT}")
+elseif(DEFINED ENV{UNITREE_LIDAR_SDK_ROOT})
   set(_RM_NAV_UNITREE_LIDAR_SDK_DEFAULT "$ENV{UNITREE_LIDAR_SDK_ROOT}")
 else()
   set(_RM_NAV_UNITREE_LIDAR_SDK_DEFAULT "")
@@ -54,6 +59,9 @@ if(UNITREE_LIDAR_SDK_ARCH
     INTERFACE_INCLUDE_DIRECTORIES "${UNITREE_LIDAR_SDK_ROOT}/include"
   )
   set(RM_NAV_HAS_UNITREE_LIDAR_SDK TRUE)
+  message(STATUS "Unitree lidar SDK enabled from: ${UNITREE_LIDAR_SDK_ROOT}")
+else()
+  message(STATUS "Unitree lidar SDK not found, building without unitree_sdk source support")
 endif()
 
 # =========================

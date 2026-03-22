@@ -1,5 +1,5 @@
 {
-  "event_code": "MAP_VALIDATION_FAILED",
-  "summary": "map validation failed",
-  "stamp_ns": 43844761014798
+  "event_code": "LOCALIZATION_DEGRADED",
+  "summary": "localization degraded",
+  "stamp_ns": 23434346903850
 }

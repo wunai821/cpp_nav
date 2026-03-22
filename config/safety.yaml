@@ -1,8 +1,8 @@
 # 安全层配置：定义安全线程运行频率以及紧急制动等基础阈值。
 safety:  # 安全控制配置，用于限速、急停和状态机约束。
   loop_hz: 50  # 安全线程运行频率，单位 Hz。
-  emergency_stop_distance_m: 0.6  # 障碍物距离小于该阈值时触发紧急制动，单位米。
-  heartbeat_timeout_ms: 100  # STM32 超过该时间未收到心跳/反馈则进入接管保护，单位毫秒。
+  emergency_stop_distance_m: 0.3 # 障碍物距离小于该阈值时触发紧急制动，单位米。
+  heartbeat_timeout_ms: 30000  # STM32 超过该时间未收到心跳/反馈则进入接管保护，单位毫秒。
   deadman_timeout_ms: 250  # planner 命令超过该时间未刷新则触发 deadman 制动，单位毫秒。
   costmap_timeout_ms: 250  # 局部 costmap 超过该时间未更新则冻结最终输出，单位毫秒。
   mode_transition_freeze_ms: 120  # 模式切换后 Safety 额外冻结输出的持续时间，单位毫秒，避免上层切态抖动直接传到底盘。
@@ -11,7 +11,7 @@ safety:  # 安全控制配置，用于限速、急停和状态机约束。
   hold_timeout_ms: 1200  # HOLD 持续过久仍未恢复则升级到 FAILSAFE，单位毫秒。
   planner_fail_timeout_ms: 1500  # 路径/规划持续不可用超过该时间则进入 FAILSAFE，单位毫秒。
   localization_fail_timeout_ms: 800  # 定位退化持续超过该时间则进入 FAILSAFE，单位毫秒。
-  mission_timeout_ms: 15000  # 比赛导航持续超时仍未到点则进入 FAILSAFE，单位毫秒。
+  mission_timeout_ms: 30000  # 比赛导航持续超时仍未到点则进入 FAILSAFE，单位毫秒。
   footprint_half_length_m: 0.30  # Safety 车体 footprint 的前后半长，单位米，中心点外加四角采样都基于它。
   footprint_half_width_m: 0.25  # Safety 车体 footprint 的左右半宽，单位米，中心点外加四角采样都基于它。
   max_vx_mps: 1.0  # Safety 最终允许下发的前向速度上限，单位米每秒。

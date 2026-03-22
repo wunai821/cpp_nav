@@ -1,12 +1,12 @@
 {
-  "state": "MODE_SAVE",
-  "previous_state": "MODE_WARMUP",
-  "last_event_code": "MAP_VALIDATION_FAILED",
-  "last_event_summary": "map validation failed",
+  "state": "RECOVERY",
+  "previous_state": "MODE_COMBAT",
+  "last_event_code": "LOCALIZATION_DEGRADED",
+  "last_event_summary": "localization degraded",
   "mapping_active": false,
   "waypoint_active": false,
-  "localization_active": false,
+  "localization_active": true,
   "center_hold_active": false,
-  "recovery_active": false,
+  "recovery_active": true,
   "failsafe_active": false
 }

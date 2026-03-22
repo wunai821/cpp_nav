@@ -34,7 +34,7 @@ int main() {
             "app_name: rm_nav_main\n"
             "version: 0.1.0\n"
             "log_level: INFO\n"
-            "auto_shutdown_ms: 600\n"
+            "auto_shutdown_ms: 1500\n"
             "manual_mode_selector: 0\n"
             "threads:\n"
             "  driver_cpu: -1\n"
@@ -132,7 +132,7 @@ int main() {
                 "  map_downsample_step: 1\n");
   WriteFile(config_dir / "mapping.yaml",
             std::string("mapping:\n") +
-                "  enabled: true\n"
+                "  enabled: false\n"
                 "  loop_hz: 8\n"
                 "  active_dir: " + output_dir.string() + "\n"
                 "  waypoint_path: " + waypoint_path + "\n"
@@ -145,8 +145,8 @@ int main() {
                 "  occupancy_resolution_m: 0.1\n"
                 "  occupancy_padding_m: 1.0\n"
                 "  synthetic_scan_radius_m: 8.0\n"
-                "  synthetic_points_per_frame: 240\n"
-                "  validation_min_global_points: 100\n"
+                "  synthetic_points_per_frame: 480\n"
+                "  validation_min_global_points: 40\n"
                 "  validation_min_occupied_cells: 10\n"
                 "  validation_min_width: 8\n"
                 "  validation_min_height: 8\n"

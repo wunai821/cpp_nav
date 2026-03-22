@@ -223,6 +223,10 @@ common::Status ProtocolCodec::DecodeRefereeState(const DecodedPacket& packet,
 
 std::vector<std::uint8_t> ProtocolCodec::EncodePacket(
     PacketType type, const std::vector<std::uint8_t>& payload) {
+  if (payload.size() > kMaxPayloadSize) {
+    return {};
+  }
+
   std::vector<std::uint8_t> packet;
   packet.reserve(kHeaderSize + payload.size() + kFooterSize);
   packet.push_back(kSof0);

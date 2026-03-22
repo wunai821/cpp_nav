@@ -7,6 +7,7 @@ namespace rm_nav::config {
 struct MappingConfig {
   bool enabled{false};
   int loop_hz{10};
+  bool save_on_loop_closure_success{true};
   std::string active_dir{"../maps/warmup/active"};
   std::string staging_dir{};
   std::string failed_dir{};

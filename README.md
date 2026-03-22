@@ -7,23 +7,23 @@
 - `Localization`：已实现
 - `Mapping`：已实现
 - `Preprocess`：部分实现
-  当前由集成式预处理链路承担，`src/perception/ground_filter.cpp` 和 `src/perception/voxel_filter.cpp` 仍是空文件。
+  当前已有 `range crop + self filter + ground suppression + voxel downsample` 主线，仍需继续做更强的现场调参和异常工况验证。
 - `Costmap/MOT`：部分实现
-  当前已有 `LocalCostmapBuilder + MotManager` 主线，但 `src/perception/obstacle_layer.cpp`、`src/perception/inflation_layer.cpp`、`src/perception/dynamic_layer.cpp`、`src/perception/tracker_kf.cpp` 仍是空文件。
+  当前已有 `ObstacleLayer + InflationLayer + DynamicLayer + TrackerKf + MotManager` 主线，仍需继续补厚更强的比赛场景验证。
 - `局部感知层`：部分实现
-  当前主线依赖 `Preprocess + LocalCostmapBuilder + MotManager`，但完整分层感知链还没真正落地。
+  当前已有分层预处理、静态障碍层和动态障碍层主线，但仍在继续补强语义分离和现场可视化验证。
 - `Planner`：部分实现
-  当前已有 `GlobalAStar + OmniDwa + GoalManager` 主线，但 `src/planning/recovery_planner.cpp` 和 `src/planning/mission_manager.cpp` 仍是空文件。
+  当前已有 `GlobalAStar + OmniDwa + GoalManager + MissionManager + RecoveryPlanner` 主线，仍需继续补强更多比赛策略细节。
 - `恢复策略`：部分实现
-  当前 FSM 有 `RECOVERY` 状态和运行时降速兜底，但独立 `RecoveryPlanner` 仍未真正落地。
-- `Safety`：部分实现
-  当前 runtime 里有内联安全 gate 和 failsafe 逻辑，但 `src/safety/*.cpp` 仍是空文件，独立安全层还没真正落地。
+  当前已有 `L1/L2/L3` 恢复策略链路，但仍需继续补强更多针对卡死、误匹配和复杂动态障碍的恢复动作。
+- `Safety`：已实现
+  当前已有独立 `SafetyManager + CommandGate + CollisionChecker + FailoverPolicy + watchdog` 主线，最终下发到底盘的命令会经过独立安全层裁决。
 - `STM32 / runtime bring-up`：部分实现
   当前串口桥和一部分运行时联调已接入，但还不应视为完整实机闭环。
 - `真正重定位`：部分实现
-  当前 localization 有失败后的预测/降级路径，但 `src/localization/relocalization_manager.cpp` 仍是空文件。
-- `LIO 前端 / ESKF-LIO`：roadmap
-  `src/mapping/lio_frontend.cpp` 和 `src/mapping/eskf_lio.cpp` 仍是空文件。
+  当前已有 `RelocalizationManager`、coarse relocalization 和稳定观察窗口链路，但仍需继续补强更多实战恢复策略。
+- `LIO 前端 / ESKF-LIO`：部分实现
+  当前已有 `ESKF-lite / LIO-lite / 轻量回环` 主线，但还不是完整的重型后端图优化系统。
 - 热身建图与正赛定位两套模式：已实现
 - mock / replay / warmup mapping / runtime bring-up 工具：已实现
 - Foxglove 最小 WebSocket 调试旁路：已实现
@@ -56,10 +56,17 @@ cmake --build build
 - `./l1_driver_test`
 - `./stm32_bridge_test`
 
-如果本机存在 Unitree L1 SDK：
+如果仓库里存在 `third_party/unitree_lidar_sdk/`：
 
-- 优先读取环境变量 `UNITREE_LIDAR_SDK_ROOT`
-- 检测到 SDK 头文件和静态库后，会自动打开 `unitree_sdk` 雷达源
+- `CMake` 会默认直接接入这份本地 Unitree L1 SDK
+- `rm_nav_main` 会直接内嵌调用 SDK 读雷达和内置 IMU，不需要额外单开一个 SDK 终端
+- 如需显式指定仓库内 SDK，也可以用可移植写法：
+
+```bash
+cmake -S . -B build -DUNITREE_LIDAR_SDK_ROOT=third_party/unitree_lidar_sdk
+```
+
+- 只有在 SDK 不放在仓库里时，才需要额外设置环境变量 `UNITREE_LIDAR_SDK_ROOT`
 
 ### 2. 查看版本
 
@@ -91,7 +98,7 @@ cmake --build build
 最常用的模式：
 
 - `bringup_mode: none`
-  正式运行默认值，按比赛主链配置启动，不额外切到可视化预设
+  正式运行默认值；模式切换只看 FSM/`manual_mode_selector`，不额外切到可视化预设
 - `bringup_mode: lidar_view`
   只在需要看真雷达时临时切换；它会拉起真雷达可视化最小链，方便调 `base_link / laser_link / footprint / current_scan / local_costmap`
 - `manual_mode_selector: 0`
@@ -99,19 +106,25 @@ cmake --build build
 - `manual_mode_selector: 1`
   只跑正赛主链：`MODE_COMBAT / GOTO_CENTER / HOLD_CENTER / RECOVERY`
 - `manual_mode_selector: -1`
-  让业务 FSM 自己切状态
+  让业务 FSM 自己切状态：若 `mapping.active_dir` 下已有 active 地图则优先走 combat，没有图则优先走 warmup
+
+切运行模式时，主程序现在只需要改 [system.yaml](config/system.yaml)：
+
+- `bringup_mode`
+- `manual_mode_selector`
+
+[mapping.yaml](config/mapping.yaml) 里的 `mapping.enabled` 和 [localization.yaml](config/localization.yaml) 里的 `localization.enabled` 现在只保留为兼容字段，不再作为 runtime 主链切模式入口。
 
 当前仍明确标记为 roadmap / 预留接口的模块：
 
-- `config/costmap.yaml`
 - `config/mission.yaml`
-- `config/mot.yaml`
 
-这些文件保留在仓库里，是为了稳定目录结构和后续扩展接口，不代表当前主链已经完全按这些配置文件驱动。
+这个文件保留在仓库里，是为了稳定目录结构和后续扩展接口，不代表当前主链已经完全按这份配置驱动。
 
 当前 `mapping` 也要明确一个边界：
 
 - 已经具备热身建图闭环和地图导出/回读能力
+- 热身建图默认在“轻量回环成功”时立即请求存图；若一直等不到回环，仍由 `system.auto_shutdown_ms` 保底触发 `MODE_SAVE`
 - 但更稳的比赛级建图能力仍在补强中
 
 这块后续工程拆分见 [mapping_hardening.md](docs/mapping_hardening.md)。

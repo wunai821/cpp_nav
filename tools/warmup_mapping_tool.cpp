@@ -149,7 +149,9 @@ void WriteSummary(const std::filesystem::path& path, const Options& options,
   output << "loop_hz=" << mapping_config.loop_hz << "\n";
   output << "frames=" << frames << "\n";
   output << "global_points=" << points << "\n";
-  output << "output_dir=" << mapping_config.output_dir << "\n";
+  output << "active_dir=" << mapping_config.active_dir << "\n";
+  output << "staging_dir=" << mapping_config.staging_dir << "\n";
+  output << "failed_dir=" << mapping_config.failed_dir << "\n";
 }
 
 }  // namespace
@@ -176,13 +178,21 @@ int main(int argc, char** argv) {
   }
   if (!options.output_dir.empty()) {
     const std::filesystem::path override_path(options.output_dir);
-    mapping_config.output_dir =
+    mapping_config.active_dir =
         (override_path.is_absolute() ? override_path : std::filesystem::current_path() / override_path)
             .lexically_normal()
             .string();
   } else {
-    mapping_config.output_dir =
-        ResolvePath(options.config_dir, mapping_config.output_dir).lexically_normal().string();
+    mapping_config.active_dir =
+        ResolvePath(options.config_dir, mapping_config.active_dir).lexically_normal().string();
+  }
+  if (!mapping_config.staging_dir.empty()) {
+    mapping_config.staging_dir =
+        ResolvePath(options.config_dir, mapping_config.staging_dir).lexically_normal().string();
+  }
+  if (!mapping_config.failed_dir.empty()) {
+    mapping_config.failed_dir =
+        ResolvePath(options.config_dir, mapping_config.failed_dir).lexically_normal().string();
   }
 
   rm_nav::mapping::WaypointManager waypoint_manager;
@@ -247,7 +257,7 @@ int main(int argc, char** argv) {
   }
 
   rm_nav::localization::StaticMap exported_map;
-  status = engine.SaveMap(mapping_config.output_dir, &exported_map);
+  status = engine.SaveMap(mapping_config.active_dir, &exported_map);
   if (!status.ok()) {
     std::cerr << status.message << "\n";
     return 1;
@@ -258,14 +268,14 @@ int main(int argc, char** argv) {
   saved_config.occupancy_path = "occupancy.bin";
   saved_config.map_meta_path = "map_meta.json";
   rm_nav::localization::StaticMap reload_map;
-  status = map_loader.Load(mapping_config.output_dir, saved_config, &reload_map);
+  status = map_loader.Load(mapping_config.active_dir, saved_config, &reload_map);
   if (!status.ok()) {
     std::cerr << "reload failed: " << status.message << "\n";
     return 1;
   }
 
-  WriteSummary(std::filesystem::path(mapping_config.output_dir) / "summary.txt", options,
+  WriteSummary(std::filesystem::path(mapping_config.active_dir) / "summary.txt", options,
                mapping_config, frame_count, reload_map.global_points.size());
-  std::cout << "warmup_mapping_tool finished, output_dir=" << mapping_config.output_dir << "\n";
+  std::cout << "warmup_mapping_tool finished, active_dir=" << mapping_config.active_dir << "\n";
   return 0;
 }

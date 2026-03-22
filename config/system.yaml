@@ -2,9 +2,9 @@
 app_name: rm_nav_main  # 程序可执行名，用于日志、诊断和启动识别。
 version: 0.1.0  # 当前系统版本号，用于和构建产物及配置集对应。
 log_level: INFO  # 日志输出级别，可选例如 DEBUG/INFO/WARN/ERROR。
-bringup_mode: none  # 启动预设模式；正式运行默认用 none，按各模块原始配置跑主链。需要看真雷达可视化时再临时切成 lidar_view；该预设会自动关闭 mapping/localization、打开 WebSocket，并放宽自动退出时长。
-auto_shutdown_ms: 600000  # 自动退出时间，单位毫秒；调试空转链路时可用于定时收尾。
-manual_mode_selector: -1 # 手动模式选择枚举；-1 表示自动 FSM，0 表示只走 MODE_WARMUP+MODE_SAVE，1 表示只走 MODE_COMBAT/GOTO_CENTER/HOLD_CENTER/RECENTER/RECOVERY。
+bringup_mode: none  # 启动预设模式；正式运行默认用 none。runtime 主链模式切换现在统一由 bringup_mode + manual_mode_selector/FSM 决定，不再需要靠 mapping/localization 的 enabled 字段切换建图/定位。
+auto_shutdown_ms: 300000  # 自动退出时间，单位毫秒；调试空转链路时可用于定时收尾。
+manual_mode_selector: -1 # 手动模式选择枚举；-1 表示自动 FSM：若 active 地图存在则走 combat，不存在则走 warmup；0 表示只走 MODE_WARMUP+MODE_SAVE；1 表示只走 MODE_COMBAT/GOTO_CENTER/HOLD_CENTER/RECENTER/RECOVERY。
 threads:  # 线程绑定配置，-1 表示不固定到特定 CPU 核心。
   driver_cpu: -1  # 驱动线程绑定核心，负责雷达、IMU、STM32 等底层 IO。
   sync_cpu: -1  # 同步线程绑定核心，负责传感器时间对齐与同步帧生成。

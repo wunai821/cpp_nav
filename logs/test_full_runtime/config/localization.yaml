@@ -1,5 +1,5 @@
 localization:
-  enabled: true
+  enabled: false
   occupancy_path: /home/naiwu/rm_sentinel_nav/maps/combat/active/occupancy.bin
   global_map_pcd_path: /home/naiwu/rm_sentinel_nav/maps/combat/active/global_map.pcd
   map_meta_path: /home/naiwu/rm_sentinel_nav/maps/combat/active/map_meta.json

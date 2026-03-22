@@ -119,7 +119,7 @@ int main() {
             "  theta_rad: 0.0\n");
   WriteFile(config_dir / "localization.yaml",
             std::string("localization:\n") +
-                "  enabled: true\n"
+                "  enabled: false\n"
                 "  occupancy_path: " + occupancy_bin + "\n"
                 "  global_map_pcd_path: " + map_pcd + "\n"
                 "  map_meta_path: " + map_meta + "\n"

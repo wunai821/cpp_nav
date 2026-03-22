@@ -1,11 +1,11 @@
 {
-  "frame_index": 4,
+  "frame_index": 11,
   "suppression_enabled": true,
-  "pending_points": 113,
-  "accepted_points": 3,
-  "rejected_points": 189,
+  "pending_points": 66,
+  "accepted_points": 22,
+  "rejected_points": 429,
   "rejected_near_field": 0,
-  "rejected_known_obstacle_mask": 21,
-  "rejected_duplicate_voxel": 168,
-  "stale_pending_evictions": 0
+  "rejected_known_obstacle_mask": 42,
+  "rejected_duplicate_voxel": 387,
+  "stale_pending_evictions": 10
 }

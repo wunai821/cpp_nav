@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 
 namespace rm_nav::protocol {
 
@@ -11,7 +12,8 @@ inline constexpr std::uint8_t kProtocolVersion = 1;
 inline constexpr std::size_t kHeaderSize = 9;
 inline constexpr std::size_t kFooterSize = 2;
 inline constexpr std::size_t kMinimumPacketSize = kHeaderSize + kFooterSize;
-inline constexpr std::size_t kMaxPayloadSize = 1024 * 64;
+inline constexpr std::size_t kMaxPayloadSize =
+    static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max());
 
 enum class PacketType : std::uint8_t {
   kHeartbeat = 1,

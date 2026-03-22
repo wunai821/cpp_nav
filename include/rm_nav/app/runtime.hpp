@@ -43,6 +43,13 @@ class Runtime {
     kStorageSwitchFailed,
   };
 
+  enum class MappingSaveTrigger {
+    kNone = 0,
+    kLoopClosure,
+    kAutoShutdown,
+    kExternalStop,
+  };
+
   Runtime();
   ~Runtime();
 
@@ -152,11 +159,14 @@ class Runtime {
   std::atomic_bool debug_scene_suppressed_{false};
   std::atomic<common::TimeNs> last_stm32_rx_ns_{0};
   std::atomic_bool mapping_save_requested_{false};
+  std::atomic_bool mapping_loop_save_requested_{false};
   std::atomic_bool map_saved_{false};
   std::atomic<int> mapping_save_failure_tag_{static_cast<int>(MappingSaveFailureTag::kNone)};
+  std::atomic<int> mapping_save_trigger_{static_cast<int>(MappingSaveTrigger::kNone)};
   std::atomic_bool combat_pipeline_ready_{false};
   std::atomic_bool combat_map_unavailable_{false};
   bool mapping_mode_{false};
+  bool combat_mode_requested_{false};
   bool initialized_{false};
 };
 

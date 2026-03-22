@@ -1,6 +1,0 @@
-config_dir=config
-duration_s=1
-loop_hz=8
-frames=8
-global_points=156
-output_dir=/home/naiwu/rm_sentinel_nav/logs/warmup_mapping_demo_v2

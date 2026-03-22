@@ -1,5 +1,5 @@
 mapping:
-  enabled: true
+  enabled: false
   loop_hz: 8
   active_dir: /home/naiwu/rm_sentinel_nav/logs/test_runtime_mapping_mode/output
   waypoint_path: /home/naiwu/rm_sentinel_nav/logs/test_runtime_mapping_mode/config/waypoints.txt
@@ -12,8 +12,8 @@ mapping:
   occupancy_resolution_m: 0.1
   occupancy_padding_m: 1.0
   synthetic_scan_radius_m: 8.0
-  synthetic_points_per_frame: 240
-  validation_min_global_points: 100
+  synthetic_points_per_frame: 480
+  validation_min_global_points: 40
   validation_min_occupied_cells: 10
   validation_min_width: 8
   validation_min_height: 8

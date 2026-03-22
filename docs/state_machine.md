@@ -152,11 +152,13 @@
 配置入口在 [system.yaml](../config/system.yaml)：
 
 - `manual_mode_selector: -1`
-  使用自动 FSM
+  使用自动 FSM；若 active 地图存在则优先进入 combat，否则优先进入 warmup
 - `manual_mode_selector: 0`
   只允许 `MODE_WARMUP + MODE_SAVE`
 - `manual_mode_selector: 1`
   只允许 combat 主链
+
+`mapping.enabled` 和 `localization.enabled` 现在只保留为兼容字段，不再作为 runtime 主链切模式入口。
 
 ## 运行时可视化
 

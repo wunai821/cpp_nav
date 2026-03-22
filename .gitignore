@@ -63,6 +63,8 @@ Makefile
 # =========================
 /logs/
 **/logs/
+/config/logs/
+**/config/logs/
 /maps/
 **/maps/
 
@@ -71,6 +73,8 @@ Makefile
 **/recordings/
 /output/
 **/output/
+/delivery/
+**/delivery/
 /runtime/
 **/runtime/
 /tmp/

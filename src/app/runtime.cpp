@@ -65,6 +65,20 @@ std::string JoinModules(const RuntimeManifest& manifest) {
   return stream.str();
 }
 
+const char* ToString(app::Runtime::MappingSaveTrigger trigger) {
+  switch (trigger) {
+    case app::Runtime::MappingSaveTrigger::kLoopClosure:
+      return "loop_closure";
+    case app::Runtime::MappingSaveTrigger::kAutoShutdown:
+      return "auto_shutdown";
+    case app::Runtime::MappingSaveTrigger::kExternalStop:
+      return "external_stop";
+    case app::Runtime::MappingSaveTrigger::kNone:
+    default:
+      return "none";
+  }
+}
+
 void SetCurrentThreadName(ThreadDomain domain) {
   const char* name = "rm_nav";
   switch (domain) {
@@ -389,6 +403,12 @@ bool ResolveCombatLocalizationConfig(const config::LoadedConfig& loaded_config,
   return false;
 }
 
+bool ManualWarmupSelected(int manual_mode_selector) { return manual_mode_selector == 0; }
+
+bool ManualCombatSelected(int manual_mode_selector) { return manual_mode_selector == 1; }
+
+bool AutomaticFsmModeSelected(int manual_mode_selector) { return manual_mode_selector < 0; }
+
 constexpr std::uint32_t kRuntimeMappingStatusChannelId = 201U;
 constexpr std::uint32_t kRuntimeCurrentWaypointChannelId = 202U;
 constexpr std::uint32_t kRuntimePartialMapSceneChannelId = 203U;
@@ -405,7 +425,7 @@ constexpr std::uint32_t kRuntimeBaseLinkSceneChannelId = 213U;
 constexpr std::uint32_t kRuntimeCurrentScanSceneChannelId = 214U;
 
 constexpr char kRuntimeMappingStatusSchema[] =
-    R"({"type":"object","properties":{"processed_frames":{"type":"integer"},"accumulated_points":{"type":"integer"},"processing_latency_ns":{"type":"integer"},"pose_source":{"type":"string"},"frontend_score":{"type":"number"},"frontend_iterations":{"type":"integer"},"frontend_converged":{"type":"boolean"},"frontend_fallback":{"type":"boolean"},"frontend_latency_ns":{"type":"integer"},"frontend_reference_points":{"type":"integer"},"external_x":{"type":"number"},"external_y":{"type":"number"},"external_yaw":{"type":"number"},"predicted_x":{"type":"number"},"predicted_y":{"type":"number"},"predicted_yaw":{"type":"number"},"optimized_x":{"type":"number"},"optimized_y":{"type":"number"},"optimized_yaw":{"type":"number"},"current_waypoint_index":{"type":"integer"},"waypoint_count":{"type":"integer"}},"required":["processed_frames","accumulated_points","processing_latency_ns","pose_source","frontend_score","frontend_iterations","frontend_converged","frontend_fallback","frontend_latency_ns","frontend_reference_points","external_x","external_y","external_yaw","predicted_x","predicted_y","predicted_yaw","optimized_x","optimized_y","optimized_yaw","current_waypoint_index","waypoint_count"]})";
+    R"({"type":"object","properties":{"processed_frames":{"type":"integer"},"accumulated_points":{"type":"integer"},"processing_latency_ns":{"type":"integer"},"pose_source":{"type":"string"},"frontend_score":{"type":"number"},"frontend_iterations":{"type":"integer"},"frontend_converged":{"type":"boolean"},"frontend_fallback":{"type":"boolean"},"frontend_latency_ns":{"type":"integer"},"frontend_reference_points":{"type":"integer"},"external_x":{"type":"number"},"external_y":{"type":"number"},"external_yaw":{"type":"number"},"predicted_x":{"type":"number"},"predicted_y":{"type":"number"},"predicted_yaw":{"type":"number"},"optimized_x":{"type":"number"},"optimized_y":{"type":"number"},"optimized_yaw":{"type":"number"},"save_trigger":{"type":"string"},"current_waypoint_index":{"type":"integer"},"waypoint_count":{"type":"integer"}},"required":["processed_frames","accumulated_points","processing_latency_ns","pose_source","frontend_score","frontend_iterations","frontend_converged","frontend_fallback","frontend_latency_ns","frontend_reference_points","external_x","external_y","external_yaw","predicted_x","predicted_y","predicted_yaw","optimized_x","optimized_y","optimized_yaw","save_trigger","current_waypoint_index","waypoint_count"]})";
 constexpr char kRuntimeWaypointSchema[] =
     R"({"type":"object","properties":{"x":{"type":"number"},"y":{"type":"number"},"yaw":{"type":"number"},"index":{"type":"integer"},"total":{"type":"integer"}},"required":["x","y","yaw","index","total"]})";
 constexpr char kRuntimeFsmStatusSchema[] =
@@ -643,8 +663,9 @@ std::string BuildScalarPoseJson(const data::Pose3f& pose, std::size_t index, std
   return output.str();
 }
 
-std::string BuildRuntimeMappingStatusJson(const mapping::MappingEngine& mapping_engine,
-                                          const mapping::WaypointManager& waypoint_manager) {
+std::string BuildRuntimeMappingStatusJson(
+    const mapping::MappingEngine& mapping_engine, const mapping::WaypointManager& waypoint_manager,
+    app::Runtime::MappingSaveTrigger save_trigger) {
   const auto result = mapping_engine.LatestResult();
   std::ostringstream output;
   output << "{\n";
@@ -669,6 +690,7 @@ std::string BuildRuntimeMappingStatusJson(const mapping::MappingEngine& mapping_
   output << "  \"optimized_x\": " << result.map_to_base.position.x << ",\n";
   output << "  \"optimized_y\": " << result.map_to_base.position.y << ",\n";
   output << "  \"optimized_yaw\": " << result.map_to_base.rpy.z << ",\n";
+  output << "  \"save_trigger\": \"" << ToString(save_trigger) << "\",\n";
   output << "  \"current_waypoint_index\": " << waypoint_manager.current_index() << ",\n";
   output << "  \"waypoint_count\": " << waypoint_manager.waypoint_count() << "\n";
   output << "}\n";
@@ -1296,6 +1318,7 @@ void WriteMappingDebugSnapshot(const mapping::MappingEngine& mapping_engine,
                                const mapping::WaypointManager& waypoint_manager,
                                const data::Pose3f& pose,
                                const data::ChassisCmd& cmd,
+                               app::Runtime::MappingSaveTrigger save_trigger,
                                const std::filesystem::path& output_dir) {
   std::filesystem::create_directories(output_dir);
   const auto global_points = mapping_engine.GlobalPointCloud();
@@ -1334,7 +1357,8 @@ void WriteMappingDebugSnapshot(const mapping::MappingEngine& mapping_engine,
     output << "{\n";
     output << "  \"processed_frames\": " << mapping_result.processed_frames << ",\n";
     output << "  \"accumulated_points\": " << mapping_result.accumulated_points << ",\n";
-    output << "  \"processing_latency_ns\": " << mapping_result.processing_latency_ns << "\n";
+    output << "  \"processing_latency_ns\": " << mapping_result.processing_latency_ns << ",\n";
+    output << "  \"save_trigger\": \"" << ToString(save_trigger) << "\"\n";
     output << "}\n";
   }
   {
@@ -1431,6 +1455,17 @@ int Runtime::Run(const std::atomic_bool& external_stop) {
   bool post_save_grace_started = false;
   auto post_save_deadline = start;
   while (!stop_requested_.load() && !external_stop.load()) {
+    if (!waiting_for_mapping_save && mapping_mode_ &&
+        !map_saved_.load(std::memory_order_acquire) &&
+        mapping_loop_save_requested_.load(std::memory_order_acquire)) {
+      utils::LogInfo("runtime", "loop closure accepted, requesting MODE_SAVE");
+      mapping_save_requested_.store(true, std::memory_order_release);
+      mapping_save_trigger_.store(static_cast<int>(MappingSaveTrigger::kLoopClosure),
+                                  std::memory_order_release);
+      waiting_for_mapping_save = true;
+      mapping_save_deadline = common::Now() + std::chrono::milliseconds(1500);
+    }
+
     if (loaded_config_.system.auto_shutdown_ms > 0) {
       const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
           common::Now() - start);
@@ -1452,6 +1487,8 @@ int Runtime::Run(const std::atomic_bool& external_stop) {
           if (!waiting_for_mapping_save) {
             utils::LogInfo("runtime", "auto shutdown reached, requesting MODE_SAVE");
             mapping_save_requested_.store(true, std::memory_order_release);
+            mapping_save_trigger_.store(static_cast<int>(MappingSaveTrigger::kAutoShutdown),
+                                        std::memory_order_release);
             waiting_for_mapping_save = true;
             mapping_save_deadline = common::Now() + std::chrono::milliseconds(1500);
           }
@@ -1467,6 +1504,8 @@ int Runtime::Run(const std::atomic_bool& external_stop) {
   if ((external_stop.load() || stop_requested_.load(std::memory_order_acquire)) && mapping_mode_ &&
       !map_saved_.load(std::memory_order_acquire)) {
     mapping_save_requested_.store(true, std::memory_order_release);
+    mapping_save_trigger_.store(static_cast<int>(MappingSaveTrigger::kExternalStop),
+                                std::memory_order_release);
     const auto deadline = common::Now() + std::chrono::milliseconds(500);
     while (common::Now() < deadline && !map_saved_.load(std::memory_order_acquire)) {
       common::SleepFor(std::chrono::milliseconds(20));
@@ -1528,12 +1567,25 @@ common::Status Runtime::ConfigurePipeline() {
   }
 
   const int manual_mode_selector = loaded_config_.system.manual_mode_selector;
-  mapping_mode_ = loaded_config_.mapping.enabled || manual_mode_selector == 0;
+  const bool manual_warmup = ManualWarmupSelected(manual_mode_selector);
+  const bool manual_combat = ManualCombatSelected(manual_mode_selector);
+  const bool automatic_fsm = AutomaticFsmModeSelected(manual_mode_selector);
+  config::LocalizationConfig combat_localization_config = loaded_config_.localization;
+  std::string combat_map_source;
+  const bool combat_map_available = ResolveCombatLocalizationConfig(
+      loaded_config_, &combat_localization_config, &combat_map_source);
+  mapping_mode_ = loaded_config_.system.bringup_mode == "none" &&
+                  (manual_warmup || (automatic_fsm && !combat_map_available));
+  combat_mode_requested_ = loaded_config_.system.bringup_mode == "none" &&
+                           (manual_combat || (automatic_fsm && combat_map_available));
   nav_fsm_ = fsm::NavFsm();
   mapping_save_requested_.store(false, std::memory_order_release);
+  mapping_loop_save_requested_.store(false, std::memory_order_release);
   map_saved_.store(false, std::memory_order_release);
   mapping_save_failure_tag_.store(static_cast<int>(MappingSaveFailureTag::kNone),
                                   std::memory_order_release);
+  mapping_save_trigger_.store(static_cast<int>(MappingSaveTrigger::kNone),
+                              std::memory_order_release);
   combat_pipeline_ready_.store(false, std::memory_order_release);
   combat_map_unavailable_.store(false, std::memory_order_release);
   last_stm32_rx_ns_.store(0, std::memory_order_release);
@@ -1628,20 +1680,14 @@ common::Status Runtime::ConfigurePipeline() {
     mapping_cmd_.Publish(mapping_cmd);
   }
 
-  if (!mapping_mode_ || manual_mode_selector == 1) {
-    if (mapping_mode_ && manual_mode_selector == 1) {
-      status = InitializeCombatPipelineFromSavedMap();
+  if (combat_mode_requested_) {
+    if (!combat_map_available) {
+      combat_map_unavailable_.store(true, std::memory_order_release);
+      utils::LogWarn("runtime", "no usable combat map found; runtime will enter failsafe");
+      status = common::Status::Ok();
     } else {
-      config::LocalizationConfig localization_config = loaded_config_.localization;
-      std::string source_label;
-      if (!ResolveCombatLocalizationConfig(loaded_config_, &localization_config, &source_label)) {
-        combat_map_unavailable_.store(true, std::memory_order_release);
-        utils::LogWarn("runtime", "no usable combat map found; runtime will enter failsafe");
-        status = common::Status::Ok();
-      } else {
-        combat_map_unavailable_.store(false, std::memory_order_release);
-        status = InitializeCombatPipeline(localization_config, loaded_config_.spawn);
-      }
+      combat_map_unavailable_.store(false, std::memory_order_release);
+      status = InitializeCombatPipeline(combat_localization_config, loaded_config_.spawn);
     }
     if (!status.ok()) {
       return status;
@@ -1790,8 +1836,11 @@ common::Status Runtime::ConfigurePipeline() {
 }
 
 common::Status Runtime::StartThreads() {
-  StopThreads();
-  stop_requested_.store(false);
+  if (!workers_.empty()) {
+    StopThreads();
+  } else {
+    stop_requested_.store(false);
+  }
 
   for (const auto& binding : manifest_.threads) {
     WorkerThread worker;
@@ -2029,6 +2078,10 @@ void Runtime::PoseThreadMain() {
             mapping_engine_.Update(*handle.get(), external_pose, known_dynamic_obstacles.obstacles);
         handle.reset();
         if (status.ok()) {
+          if (loaded_config_.mapping.save_on_loop_closure_success &&
+              mapping_engine_.LatestLoopCorrection().accepted) {
+            mapping_loop_save_requested_.store(true, std::memory_order_release);
+          }
           mapping_pose_.Publish(mapping_engine_.LatestResult().map_to_base);
           mapped_frames_.fetch_add(1, std::memory_order_relaxed);
           progressed = true;
@@ -2332,6 +2385,8 @@ void Runtime::DebugThreadMain() {
       const auto safety_result = latest_safety_result_.ReadSnapshot();
       const auto recovery_status = latest_recovery_status_.ReadSnapshot();
       const auto planner_cmd = planner_.LatestCmd();
+      const auto save_trigger = static_cast<MappingSaveTrigger>(
+          mapping_save_trigger_.load(std::memory_order_acquire));
       stream << "pipeline stats lidar=" << driver_lidar_frames_.load()
              << " imu=" << driver_imu_packets_.load()
              << " sync=" << synced_frames_.load()
@@ -2361,6 +2416,7 @@ void Runtime::DebugThreadMain() {
                << ", pose=" << pose.position.x << "/" << pose.position.y
                << ", goal=" << goal.position.x << "/" << goal.position.y
                << ", cmd=" << cmd.vx_mps << "/" << cmd.vy_mps << "/" << cmd.wz_radps
+               << ", save_trigger=" << ToString(save_trigger)
                << ")";
       } else if (fsm_snapshot.localization_active) {
         stream << " loc(matcher=" << localization_result.matcher_name
@@ -2494,9 +2550,10 @@ void Runtime::DebugThreadMain() {
           }
           WriteMappingDebugSnapshot(mapping_engine_, waypoint_manager_,
                                     mapping_pose_.ReadSnapshot(), mapping_cmd_.ReadSnapshot(),
+                                    save_trigger,
                                     RuntimeDebugOutputDir());
           const auto mapping_status_json =
-              BuildRuntimeMappingStatusJson(mapping_engine_, waypoint_manager_);
+              BuildRuntimeMappingStatusJson(mapping_engine_, waypoint_manager_, save_trigger);
           const auto waypoint_json = BuildScalarPoseJson(
               waypoint_manager_.CurrentGoal(), waypoint_manager_.current_index(),
               waypoint_manager_.waypoint_count());
@@ -2695,18 +2752,16 @@ common::Status Runtime::InitializeCombatPipelineFromSavedMap() {
 
 fsm::NavFsmContext Runtime::BuildFsmContext(bool referee_changed) const {
   fsm::NavFsmContext context;
-  const int manual_mode_selector = loaded_config_.system.manual_mode_selector;
   const bool map_saved = map_saved_.load(std::memory_order_acquire);
   const bool combat_ready = combat_pipeline_ready_.load(std::memory_order_acquire);
   context.save_requested =
-      mapping_save_requested_.load(std::memory_order_acquire) && !map_saved;
+      mapping_mode_ && mapping_save_requested_.load(std::memory_order_acquire) && !map_saved;
   context.map_saved = map_saved;
   context.combat_ready = combat_ready;
   context.map_loaded = context.combat_ready && localization_.map_loaded();
   context.referee_changed = referee_changed;
   context.map_unavailable = combat_map_unavailable_.load(std::memory_order_acquire);
-  context.combat_requested =
-      manual_mode_selector == 1 || (!mapping_mode_ && loaded_config_.localization.enabled);
+  context.combat_requested = combat_mode_requested_;
   const auto save_failure_tag = static_cast<MappingSaveFailureTag>(
       mapping_save_failure_tag_.load(std::memory_order_acquire));
   context.map_save_write_failed = save_failure_tag == MappingSaveFailureTag::kWriteFailed;
@@ -2714,17 +2769,7 @@ fsm::NavFsmContext Runtime::BuildFsmContext(bool referee_changed) const {
       save_failure_tag == MappingSaveFailureTag::kValidationFailed;
   context.map_save_storage_failed =
       save_failure_tag == MappingSaveFailureTag::kStorageSwitchFailed;
-
-  if (manual_mode_selector == 0) {
-    context.mapping_enabled = !map_saved;
-    context.combat_ready = false;
-    context.map_loaded = false;
-  } else if (manual_mode_selector == 1) {
-    context.mapping_enabled = false;
-    context.save_requested = false;
-  } else {
-    context.mapping_enabled = mapping_mode_ && !map_saved;
-  }
+  context.mapping_enabled = mapping_mode_ && !map_saved;
 
   if (stm32_available_.load(std::memory_order_acquire)) {
     const auto last_rx_ns = last_stm32_rx_ns_.load(std::memory_order_acquire);
@@ -2928,8 +2973,11 @@ common::Status Runtime::SaveMappingArtifacts(localization::StaticMap* exported_m
   }
   map_saved_.store(true, std::memory_order_release);
   mapping_save_requested_.store(false, std::memory_order_release);
+  mapping_loop_save_requested_.store(false, std::memory_order_release);
   mapping_save_failure_tag_.store(static_cast<int>(MappingSaveFailureTag::kNone),
                                   std::memory_order_release);
+  mapping_save_trigger_.store(static_cast<int>(MappingSaveTrigger::kNone),
+                              std::memory_order_release);
   combat_map_unavailable_.store(false, std::memory_order_release);
   utils::LogInfo("mapping",
                  std::string("saved warmup map to ") +
@@ -2939,11 +2987,7 @@ common::Status Runtime::SaveMappingArtifacts(localization::StaticMap* exported_m
 }
 
 bool Runtime::PerceptionBringupMode() const {
-  if (loaded_config_.system.bringup_mode == "lidar_view") {
-    return true;
-  }
-  return loaded_config_.sensors.lidar_source == "unitree_sdk" &&
-         !loaded_config_.localization.enabled;
+  return loaded_config_.system.bringup_mode == "lidar_view";
 }
 
 void Runtime::LogOncePerThread(const char* component, const std::string& message,

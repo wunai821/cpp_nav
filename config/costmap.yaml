@@ -3,14 +3,14 @@
 
 costmap:
   # 以机器人为中心的局部代价地图在 x 方向上的单元格数量。
-  width: 80
+  width: 50
   # 以机器人为中心的局部代价地图在 y 方向上的单元格数量。
-  height: 80
+  height: 50
   # 每个单元格对应的米数。
   resolution_m: 0.10
   # 写入静态障碍物层时，忽略低于该 z 值的点。
-  obstacle_layer_height_m: 0.05
+  obstacle_layer_height_m: 0.08
   # 面向规划器的代价地图所使用的静态膨胀半径。
-  inflation_radius_m: 0.30
+  inflation_radius_m: 0.15
   # 在动态层中，为已跟踪的动态障碍物额外增加的膨胀半径。
-  dynamic_obstacle_inflation_m: 0.45
+  dynamic_obstacle_inflation_m: 0.25
