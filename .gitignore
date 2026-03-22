@@ -110,6 +110,7 @@ Makefile
 *.suo
 *.sln.docstates
 .idea/
+.cache/
 
 # =========================
 # 7. 操作系统文件
