@@ -30,3 +30,4 @@ imu:  # IMU 配置，用于姿态预积分、deskew 和同步链路。
     roll_rad: 0.00  # IMU 绕 x 轴的安装滚转角，先与 lidar.mount 对齐，右手系为正，单位弧度。
     pitch_rad: 0.00  # IMU 绕 y 轴的安装俯仰角，先与 lidar.mount 对齐，右手系为正，单位弧度。
     yaw_rad: 0.00  # IMU 朝向相对 base_link 的偏航角，先与 lidar.mount 对齐，逆时针为正，单位弧度。
+  

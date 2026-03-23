@@ -209,6 +209,12 @@ common::Status ConfigLoader::LoadFromDirectory(
     result.system.manual_mode_selector =
         GetInt(merged_values, "manual_mode_selector",
                result.system.manual_mode_selector);
+    result.system.require_referee_start_for_warmup =
+        GetBool(merged_values, "require_referee_start_for_warmup",
+                result.system.require_referee_start_for_warmup);
+    result.system.require_referee_start_for_combat =
+        GetBool(merged_values, "require_referee_start_for_combat",
+                result.system.require_referee_start_for_combat);
     result.system.thread_affinity.driver_cpu =
         GetInt(merged_values, "threads.driver_cpu",
                result.system.thread_affinity.driver_cpu);
@@ -928,6 +934,10 @@ std::string ConfigLoader::BuildSummary(const LoadedConfig& loaded_config) const 
           << ", bringup_mode=" << loaded_config.system.bringup_mode
           << ", auto_shutdown_ms=" << loaded_config.system.auto_shutdown_ms
           << ", manual_mode_selector=" << loaded_config.system.manual_mode_selector
+          << ", wait_referee=[warmup:"
+          << (loaded_config.system.require_referee_start_for_warmup ? "on" : "off")
+          << ", combat:"
+          << (loaded_config.system.require_referee_start_for_combat ? "on" : "off") << "]"
           << ", frames=[" << loaded_config.frames.map << ", " << loaded_config.frames.odom
           << ", " << loaded_config.frames.base_link << ", "
           << loaded_config.frames.laser_link << ", " << loaded_config.frames.imu_link

@@ -21,6 +21,8 @@ struct SystemConfig {
   std::string bringup_mode{"none"};
   int auto_shutdown_ms{1000};
   int manual_mode_selector{-1};
+  bool require_referee_start_for_warmup{true};
+  bool require_referee_start_for_combat{true};
   ThreadAffinityConfig thread_affinity{};
 };
 

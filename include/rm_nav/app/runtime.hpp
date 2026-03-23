@@ -85,6 +85,9 @@ class Runtime {
       const config::LocalizationConfig& localization_config,
       const config::SpawnConfig& spawn_config);
   common::Status InitializeCombatPipelineFromSavedMap();
+  bool RefereeStartRequired(bool for_mapping) const;
+  bool RefereeStartAuthorized(bool for_mapping) const;
+  bool MappingSaveEligible() const;
   fsm::NavFsmContext BuildFsmContext(bool referee_changed) const;
   data::ChassisCmd SelectCommandCandidate(const fsm::NavFsmSnapshot& snapshot,
                                           common::TimePoint stamp);

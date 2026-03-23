@@ -5,6 +5,8 @@ log_level: INFO  # 日志输出级别，可选例如 DEBUG/INFO/WARN/ERROR。
 bringup_mode: none  # 启动预设模式；正式运行默认用 none。runtime 主链模式切换现在统一由 bringup_mode + manual_mode_selector/FSM 决定，不再需要靠 mapping/localization 的 enabled 字段切换建图/定位。
 auto_shutdown_ms: 300000  # 自动退出时间，单位毫秒；调试空转链路时可用于定时收尾。
 manual_mode_selector: -1 # 手动模式选择枚举；-1 表示自动 FSM：若 active 地图存在则走 combat，不存在则走 warmup；0 表示只走 MODE_WARMUP+MODE_SAVE；1 表示只走 MODE_COMBAT/GOTO_CENTER/HOLD_CENTER/RECENTER/RECOVERY。
+require_referee_start_for_warmup: true  # 是否要求收到下位机“比赛开始”后才允许进入建图链。正式比赛建议 true；调试热身建图链时可临时改成 false。
+require_referee_start_for_combat: true  # 是否要求收到下位机“比赛开始”后才允许进入定位/正赛链。正式比赛建议 true；纯定位/规划联调时可临时改成 false。
 threads:  # 线程绑定配置，-1 表示不固定到特定 CPU 核心。
   driver_cpu: -1  # 驱动线程绑定核心，负责雷达、IMU、STM32 等底层 IO。
   sync_cpu: -1  # 同步线程绑定核心，负责传感器时间对齐与同步帧生成。

@@ -1483,7 +1483,8 @@ int Runtime::Run(const std::atomic_bool& external_stop) {
             utils::LogWarn("runtime", "mapping save wait timeout reached");
             break;
           }
-        } else if (mapping_mode_ && !map_saved_.load(std::memory_order_acquire)) {
+        } else if (mapping_mode_ && !map_saved_.load(std::memory_order_acquire) &&
+                   MappingSaveEligible()) {
           if (!waiting_for_mapping_save) {
             utils::LogInfo("runtime", "auto shutdown reached, requesting MODE_SAVE");
             mapping_save_requested_.store(true, std::memory_order_release);
@@ -1492,6 +1493,10 @@ int Runtime::Run(const std::atomic_bool& external_stop) {
             waiting_for_mapping_save = true;
             mapping_save_deadline = common::Now() + std::chrono::milliseconds(1500);
           }
+        } else if (mapping_mode_ && !map_saved_.load(std::memory_order_acquire)) {
+          utils::LogInfo("runtime",
+                         "auto shutdown reached before start signal; stopping without saving");
+          break;
         } else {
           utils::LogInfo("runtime", "auto shutdown timeout reached");
           break;
@@ -1502,7 +1507,7 @@ int Runtime::Run(const std::atomic_bool& external_stop) {
   }
 
   if ((external_stop.load() || stop_requested_.load(std::memory_order_acquire)) && mapping_mode_ &&
-      !map_saved_.load(std::memory_order_acquire)) {
+      !map_saved_.load(std::memory_order_acquire) && MappingSaveEligible()) {
     mapping_save_requested_.store(true, std::memory_order_release);
     mapping_save_trigger_.store(static_cast<int>(MappingSaveTrigger::kExternalStop),
                                 std::memory_order_release);
@@ -2280,18 +2285,20 @@ void Runtime::SafetyThreadMain() {
     const auto planner_status = planner_.LatestStatus();
     const auto costmap = local_costmap_builder_.LatestCostmap();
     const auto obstacles = mot_manager_.LatestObstacles();
-    const auto referee = referee_state_.ReadSnapshot();
     const auto odom_snapshot = stm32_odom_.ReadSnapshot();
     const auto current_pose =
         snapshot.mapping_active ? mapping_pose_.ReadSnapshot() : localization_result.map_to_base;
+    const bool warmup_start_authorized = RefereeStartAuthorized(true);
+    const bool combat_start_authorized = RefereeStartAuthorized(false);
 
     safety::SafetyInput safety_input;
     safety_input.stamp = now;
     safety_input.start_signal_active =
-        snapshot.mapping_active || !loaded_config_.comm.stm32_enabled ||
-        !stm32_available_.load(std::memory_order_acquire) ||
-        loaded_config_.system.manual_mode_selector >= 0 ||
-        RefereeStartSignalActive(referee);
+        snapshot.mapping_active ? warmup_start_authorized
+                                : (snapshot.localization_active || snapshot.center_hold_active ||
+                                   snapshot.recovery_active || combat_mode_requested_)
+                                      ? combat_start_authorized
+                                      : (warmup_start_authorized && combat_start_authorized);
     safety_input.arming_ready =
         snapshot.mapping_active
             ? current_pose.is_valid
@@ -2750,10 +2757,42 @@ common::Status Runtime::InitializeCombatPipelineFromSavedMap() {
   return InitializeCombatPipeline(localization_config, spawn_config);
 }
 
+bool Runtime::RefereeStartRequired(bool for_mapping) const {
+  if (loaded_config_.system.bringup_mode != "none" || !loaded_config_.comm.stm32_enabled ||
+      !stm32_available_.load(std::memory_order_acquire)) {
+    return false;
+  }
+  return for_mapping ? loaded_config_.system.require_referee_start_for_warmup
+                     : loaded_config_.system.require_referee_start_for_combat;
+}
+
+bool Runtime::RefereeStartAuthorized(bool for_mapping) const {
+  if (!RefereeStartRequired(for_mapping)) {
+    return true;
+  }
+  return RefereeStartSignalActive(referee_state_.ReadSnapshot());
+}
+
+bool Runtime::MappingSaveEligible() const {
+  if (!mapping_mode_) {
+    return false;
+  }
+  if (mapped_frames_.load(std::memory_order_relaxed) > 0U) {
+    return true;
+  }
+  const auto snapshot = fsm_snapshot_.ReadSnapshot();
+  return snapshot.mapping_active ||
+         mapping_save_requested_.load(std::memory_order_acquire) ||
+         mapping_loop_save_requested_.load(std::memory_order_acquire);
+}
+
 fsm::NavFsmContext Runtime::BuildFsmContext(bool referee_changed) const {
   fsm::NavFsmContext context;
   const bool map_saved = map_saved_.load(std::memory_order_acquire);
-  const bool combat_ready = combat_pipeline_ready_.load(std::memory_order_acquire);
+  const bool warmup_start_authorized = RefereeStartAuthorized(true);
+  const bool combat_start_authorized = RefereeStartAuthorized(false);
+  const bool combat_ready =
+      combat_pipeline_ready_.load(std::memory_order_acquire) && combat_start_authorized;
   context.save_requested =
       mapping_mode_ && mapping_save_requested_.load(std::memory_order_acquire) && !map_saved;
   context.map_saved = map_saved;
@@ -2761,7 +2800,7 @@ fsm::NavFsmContext Runtime::BuildFsmContext(bool referee_changed) const {
   context.map_loaded = context.combat_ready && localization_.map_loaded();
   context.referee_changed = referee_changed;
   context.map_unavailable = combat_map_unavailable_.load(std::memory_order_acquire);
-  context.combat_requested = combat_mode_requested_;
+  context.combat_requested = combat_mode_requested_ && combat_start_authorized;
   const auto save_failure_tag = static_cast<MappingSaveFailureTag>(
       mapping_save_failure_tag_.load(std::memory_order_acquire));
   context.map_save_write_failed = save_failure_tag == MappingSaveFailureTag::kWriteFailed;
@@ -2769,7 +2808,7 @@ fsm::NavFsmContext Runtime::BuildFsmContext(bool referee_changed) const {
       save_failure_tag == MappingSaveFailureTag::kValidationFailed;
   context.map_save_storage_failed =
       save_failure_tag == MappingSaveFailureTag::kStorageSwitchFailed;
-  context.mapping_enabled = mapping_mode_ && !map_saved;
+  context.mapping_enabled = mapping_mode_ && !map_saved && warmup_start_authorized;
 
   if (stm32_available_.load(std::memory_order_acquire)) {
     const auto last_rx_ns = last_stm32_rx_ns_.load(std::memory_order_acquire);

@@ -1,5 +1,6 @@
 {
   "processed_frames": 11,
-  "accumulated_points": 170,
-  "processing_latency_ns": 139539
+  "accumulated_points": 164,
+  "processing_latency_ns": 198450,
+  "save_trigger": "none"
 }

@@ -107,11 +107,17 @@ cmake -S . -B build -DUNITREE_LIDAR_SDK_ROOT=third_party/unitree_lidar_sdk
   只跑正赛主链：`MODE_COMBAT / GOTO_CENTER / HOLD_CENTER / RECOVERY`
 - `manual_mode_selector: -1`
   让业务 FSM 自己切状态：若 `mapping.active_dir` 下已有 active 地图则优先走 combat，没有图则优先走 warmup
+- `require_referee_start_for_warmup: true`
+  热身建图是否必须等下位机“比赛开始”信号；正式跑比赛建议开，调试建图链时可临时关
+- `require_referee_start_for_combat: true`
+  正赛定位/导航是否必须等下位机“比赛开始”信号；正式跑比赛建议开，调试定位链时可临时关
 
 切运行模式时，主程序现在只需要改 [system.yaml](config/system.yaml)：
 
 - `bringup_mode`
 - `manual_mode_selector`
+- `require_referee_start_for_warmup`
+- `require_referee_start_for_combat`
 
 [mapping.yaml](config/mapping.yaml) 里的 `mapping.enabled` 和 [localization.yaml](config/localization.yaml) 里的 `localization.enabled` 现在只保留为兼容字段，不再作为 runtime 主链切模式入口。
 
