@@ -76,15 +76,19 @@ int App::Run(int argc, char** argv) {
 
   auto status = ParseArgs(argc, argv, &config_dir, &print_version);
   if (!status.ok()) {
-    utils::Logger::Instance().Initialize({utils::LogLevel::kInfo});
+    utils::Logger::Instance().Initialize(
+        {utils::LogLevel::kInfo, "logs/rm_nav.log", true, false, 4096});
     utils::LogError("main", status.message);
+    utils::Logger::Instance().Shutdown();
     return 1;
   }
 
-  utils::Logger::Instance().Initialize({utils::LogLevel::kInfo});
+  utils::Logger::Instance().Initialize(
+      {utils::LogLevel::kInfo, "logs/rm_nav.log", true, false, 4096});
 
   if (print_version) {
     utils::LogInfo("main", std::string("rm_nav_main version ") + RM_NAV_VERSION);
+    utils::Logger::Instance().Shutdown();
     return 0;
   }
 
@@ -102,11 +106,13 @@ int App::Run(int argc, char** argv) {
   status = runtime.Initialize(config_dir);
   if (!status.ok()) {
     utils::LogError("main", status.message);
+    utils::Logger::Instance().Shutdown();
     return 1;
   }
 
   const int exit_code = runtime.Run(g_stop_requested);
   utils::LogInfo("main", "runtime exited cleanly");
+  utils::Logger::Instance().Shutdown();
   return exit_code;
 }
 

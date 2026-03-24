@@ -378,6 +378,18 @@ bool RefereeStartSignalActive(const data::RefereeState& referee) {
   return referee.is_online && referee.game_stage != 0U && referee.remaining_time_s > 0U;
 }
 
+data::Pose3f SpawnGoalPose(const config::SpawnConfig& spawn_config, common::TimePoint stamp) {
+  data::Pose3f pose;
+  pose.stamp = stamp;
+  pose.reference_frame = tf::kMapFrame;
+  pose.child_frame = tf::kBaseLinkFrame;
+  pose.position.x = static_cast<float>(spawn_config.x_m);
+  pose.position.y = static_cast<float>(spawn_config.y_m);
+  pose.rpy.z = static_cast<float>(spawn_config.theta_rad);
+  pose.is_valid = true;
+  return pose;
+}
+
 bool ResolveCombatLocalizationConfig(const config::LoadedConfig& loaded_config,
                                      config::LocalizationConfig* localization_config,
                                      std::string* source_label) {
@@ -1068,6 +1080,49 @@ std::vector<data::PointXYZI> CurrentScanScenePoints(const data::LidarFrame& fram
   return points;
 }
 
+data::LidarFrame BuildDebugScanSnapshot(const data::LidarFrame& source,
+                                        std::size_t max_points) {
+  data::LidarFrame snapshot;
+  snapshot.stamp = source.stamp;
+  snapshot.scan_begin_stamp = source.scan_begin_stamp;
+  snapshot.scan_end_stamp = source.scan_end_stamp;
+  snapshot.frame_id = source.frame_id;
+  snapshot.frame_index = source.frame_index;
+  snapshot.is_deskewed = source.is_deskewed;
+  auto& points = snapshot.points.MutableView();
+  points = DownsampleScenePoints(source.points.view(), max_points);
+  return snapshot;
+}
+
+void EnsureRuntimeDebugDirectories(const std::filesystem::path& output_dir) {
+  std::filesystem::create_directories(output_dir);
+  std::filesystem::create_directories("logs/watchdog");
+  std::filesystem::create_directories("logs/crash");
+}
+
+void WriteTextFile(const std::filesystem::path& path, const std::string& text) {
+  std::ofstream output(path, std::ios::out | std::ios::trunc);
+  output << text;
+}
+
+void WriteTextFileIfChanged(const std::filesystem::path& path, const std::string& text,
+                            std::string* last_text) {
+  if (last_text != nullptr && *last_text == text) {
+    return;
+  }
+  WriteTextFile(path, text);
+  if (last_text != nullptr) {
+    *last_text = text;
+  }
+}
+
+std::string BuildHeartbeatJson(common::TimePoint stamp, fsm::NavState state) {
+  std::ostringstream output;
+  output << "{\n  \"stamp_ns\": " << common::ToNanoseconds(stamp)
+         << ",\n  \"state\": \"" << fsm::ToString(state) << "\"\n}\n";
+  return output.str();
+}
+
 void PublishFoxgloveJson(debug::FoxgloveServer* server, std::uint32_t channel_id,
                          const std::string& payload, common::TimePoint stamp) {
   if (server == nullptr || !server->is_running()) {
@@ -1081,8 +1136,6 @@ void WriteDebugSnapshot(const localization::LocalizationEngine& localization,
                         const planning::RecoveryPlannerStatus& recovery_status,
                         const safety::SafetyResult& safety_result,
                         const std::filesystem::path& output_dir) {
-  std::filesystem::create_directories(output_dir);
-
   const auto result = localization.LatestResult();
   const auto scan = localization.LatestAlignedScan();
   const auto& map = localization.static_map();
@@ -1320,7 +1373,6 @@ void WriteMappingDebugSnapshot(const mapping::MappingEngine& mapping_engine,
                                const data::ChassisCmd& cmd,
                                app::Runtime::MappingSaveTrigger save_trigger,
                                const std::filesystem::path& output_dir) {
-  std::filesystem::create_directories(output_dir);
   const auto global_points = mapping_engine.GlobalPointCloud();
   const auto mapping_result = mapping_engine.LatestResult();
   const auto dynamic_debug = mapping_engine.LatestDynamicSuppressionDebug();
@@ -1367,38 +1419,18 @@ void WriteMappingDebugSnapshot(const mapping::MappingEngine& mapping_engine,
   WriteDynamicSuppressionDebugSnapshot(dynamic_debug, output_dir);
 }
 
-void WriteFsmDebugSnapshot(const fsm::NavFsmSnapshot& snapshot,
-                           const std::filesystem::path& output_dir) {
-  std::filesystem::create_directories(output_dir);
-  {
-    std::ofstream output(output_dir / "fsm_status.json");
-    output << BuildFsmStatusJson(snapshot);
-  }
-  {
-    std::ofstream output(output_dir / "fsm_event.json");
-    output << BuildFsmEventJson(snapshot.last_event);
-  }
+void WriteFsmDebugSnapshot(const std::string& fsm_status_json,
+                           const std::string& fsm_event_json,
+                           const std::filesystem::path& output_dir,
+                           std::string* last_fsm_status_json,
+                           std::string* last_fsm_event_json) {
+  WriteTextFileIfChanged(output_dir / "fsm_status.json", fsm_status_json, last_fsm_status_json);
+  WriteTextFileIfChanged(output_dir / "fsm_event.json", fsm_event_json, last_fsm_event_json);
 }
 
 void WriteSafetyEventDebugSnapshot(const data::SafetyEvent& event,
                                    const std::filesystem::path& output_dir) {
-  std::filesystem::create_directories(output_dir);
-  std::ofstream output(output_dir / "safety_event.json");
-  output << BuildSafetyEventJson(event);
-}
-
-void WritePerfDebugSnapshot(const std::string& perf_json,
-                            const std::filesystem::path& output_dir) {
-  std::filesystem::create_directories(output_dir);
-  std::filesystem::create_directories("logs/crash");
-  {
-    std::ofstream output(output_dir / "perf_status.json");
-    output << perf_json;
-  }
-  {
-    std::ofstream output("logs/crash/last_runtime_state.json");
-    output << perf_json;
-  }
+  WriteTextFile(output_dir / "safety_event.json", BuildSafetyEventJson(event));
 }
 
 }  // namespace
@@ -1420,12 +1452,16 @@ common::Status Runtime::Initialize(const std::string& config_dir) {
   }
 
   utils::Logger::Instance().Initialize(
-      {utils::ParseLogLevel(loaded_config_.system.log_level)});
+      {utils::ParseLogLevel(loaded_config_.system.log_level),
+       loaded_config_.system.log_file_path, true, loaded_config_.system.console_io_only,
+       static_cast<std::size_t>(std::max(1, loaded_config_.system.log_max_queue_size))});
 
   status = ValidateLoadedConfig();
   if (!status.ok()) {
     return status;
   }
+
+  EnsureRuntimeDebugDirectories(RuntimeDebugOutputDir());
 
   status = ConfigurePipeline();
   if (!status.ok()) {
@@ -1625,6 +1661,10 @@ common::Status Runtime::ConfigurePipeline() {
   preprocess_config.self_mask_x_max_m = loaded_config_.sensors.lidar_self_mask.x_max_m;
   preprocess_config.self_mask_y_min_m = loaded_config_.sensors.lidar_self_mask.y_min_m;
   preprocess_config.self_mask_y_max_m = loaded_config_.sensors.lidar_self_mask.y_max_m;
+  preprocess_config.expected_input_points =
+      mapping_mode_
+          ? static_cast<std::size_t>(std::max(32, loaded_config_.mapping.synthetic_points_per_frame))
+          : static_cast<std::size_t>(720);
   perception::LocalCostmapConfig local_costmap_config;
   local_costmap_config.width = loaded_config_.costmap.width;
   local_costmap_config.height = loaded_config_.costmap.height;
@@ -1664,6 +1704,29 @@ common::Status Runtime::ConfigurePipeline() {
   if (!status.ok()) {
     return status;
   }
+  MatchModeConfig match_mode_config;
+  match_mode_config.enabled = loaded_config_.system.match_mode_enabled;
+  match_mode_config.low_hp_threshold = loaded_config_.system.match_low_hp_threshold;
+  match_mode_config.spawn_wait_ms = loaded_config_.system.match_spawn_wait_ms;
+  match_mode_config.spawn_reach_tolerance_m =
+      static_cast<float>(loaded_config_.planner.center_radius_m);
+  match_mode_config.spawn_pose =
+      SpawnGoalPose(loaded_config_.spawn, common::Now());
+  match_mode_config.center_reach_tolerance_m =
+      static_cast<float>(loaded_config_.planner.center_radius_m);
+  match_mode_config.center_pose.stamp = common::Now();
+  match_mode_config.center_pose.reference_frame = tf::kMapFrame;
+  match_mode_config.center_pose.child_frame = tf::kBaseLinkFrame;
+  match_mode_config.center_pose.position.x =
+      static_cast<float>(loaded_config_.planner.center_goal_x_m);
+  match_mode_config.center_pose.position.y =
+      static_cast<float>(loaded_config_.planner.center_goal_y_m);
+  match_mode_config.center_pose.is_valid = true;
+  status = match_mode_controller_.Configure(match_mode_config);
+  if (!status.ok()) {
+    return status;
+  }
+  latest_match_mode_decision_.Publish(match_mode_controller_.LatestDecision());
   if (mapping_mode_) {
     status = mapping_engine_.Initialize(loaded_config_.mapping);
     if (!status.ok()) {
@@ -1924,6 +1987,24 @@ void Runtime::DriverThreadMain() {
   auto cpu_time_begin_ns = ThreadCpuTimeNs();
 
   while (!stop_requested_.load(std::memory_order_acquire)) {
+    bool made_progress = false;
+    const auto wait_begin = common::Now();
+    const bool heartbeat_due = stm32_available_.load(std::memory_order_acquire) &&
+                               wait_begin >= next_heartbeat_due;
+    const bool cmd_due =
+        stm32_available_.load(std::memory_order_acquire) &&
+        safety_cmd_.generation() != last_sent_cmd_generation;
+    if (!heartbeat_due && !cmd_due) {
+      if (loaded_config_.sensors.lidar_enabled &&
+          (loaded_config_.sensors.lidar_source == "unitree_sdk" ||
+           loaded_config_.sensors.lidar_source == "synthetic" ||
+           loaded_config_.sensors.imu_source == "lidar_internal")) {
+        made_progress = lidar_driver_.WaitForData(std::chrono::milliseconds(2));
+      }
+      if (!made_progress && stm32_available_.load(std::memory_order_acquire)) {
+        made_progress = stm32_bridge_.WaitForRx(std::chrono::milliseconds(2));
+      }
+    }
     if (loaded_config_.sensors.imu_enabled) {
       std::optional<data::ImuPacket> packet;
       if (loaded_config_.sensors.imu_source == "lidar_internal") {
@@ -1934,6 +2015,7 @@ void Runtime::DriverThreadMain() {
       if (packet.has_value()) {
         sensor_sync_.PushImuPacket(*packet);
         driver_imu_packets_.fetch_add(1, std::memory_order_relaxed);
+        made_progress = true;
       }
     } else {
       common::SleepFor(std::chrono::milliseconds(2));
@@ -1945,6 +2027,7 @@ void Runtime::DriverThreadMain() {
       if (frame.has_value()) {
         sensor_sync_.PushLidarFrame(*frame);
         driver_lidar_frames_.fetch_add(1, std::memory_order_relaxed);
+        made_progress = true;
         const auto fsm_snapshot = fsm_snapshot_.ReadSnapshot();
         if (!stm32_available_.load(std::memory_order_acquire) &&
             fsm_snapshot.localization_active) {
@@ -1957,36 +2040,44 @@ void Runtime::DriverThreadMain() {
     if (!stm32_available_.load(std::memory_order_acquire)) {
       LogOncePerThread("driver", "stm32 bridge offline, command output is disabled",
                        &offline_logged);
-      continue;
-    }
-
-    if (now >= next_heartbeat_due) {
-      const auto heartbeat_status = stm32_bridge_.SendHeartbeat();
-      if (!heartbeat_status.ok()) {
-        utils::LogWarn("driver", heartbeat_status.message);
+    } else {
+      if (now >= next_heartbeat_due) {
+        const auto heartbeat_status = stm32_bridge_.SendHeartbeat();
+        if (!heartbeat_status.ok()) {
+          utils::LogWarn("driver", heartbeat_status.message);
+        } else {
+          made_progress = true;
+        }
+        next_heartbeat_due = now + std::chrono::milliseconds(200);
       }
-      next_heartbeat_due = now + std::chrono::milliseconds(200);
-    }
 
-    if (const auto cmd_generation = safety_cmd_.generation();
-        cmd_generation != last_sent_cmd_generation) {
-      const auto safe_cmd = safety_cmd_.ReadSnapshot();
-      const auto send_status = stm32_bridge_.SendChassisCmd(safe_cmd);
-      if (send_status.ok()) {
-        last_sent_cmd_generation = cmd_generation;
-      } else {
-        utils::LogWarn("driver", send_status.message);
+      if (const auto cmd_generation = safety_cmd_.generation();
+          cmd_generation != last_sent_cmd_generation) {
+        const auto safe_cmd = safety_cmd_.ReadSnapshot();
+        const auto send_status = stm32_bridge_.SendChassisCmd(safe_cmd);
+        if (send_status.ok()) {
+          last_sent_cmd_generation = cmd_generation;
+          made_progress = true;
+        } else {
+          utils::LogWarn("driver", send_status.message);
+        }
       }
-    }
 
-    stm32_bridge_.SpinOnce();
-    if (auto odom = stm32_bridge_.TakeOdomState(); odom.has_value()) {
-      stm32_odom_.Publish(*odom);
-      last_stm32_rx_ns_.store(common::ToNanoseconds(odom->stamp), std::memory_order_release);
-    }
-    if (auto referee = stm32_bridge_.TakeRefereeState(); referee.has_value()) {
-      referee_state_.Publish(*referee);
-      last_stm32_rx_ns_.store(common::ToNanoseconds(referee->stamp), std::memory_order_release);
+      if (stm32_bridge_.WaitForRx(std::chrono::milliseconds(0))) {
+        stm32_bridge_.SpinOnce();
+        made_progress = true;
+        if (auto odom = stm32_bridge_.TakeOdomState(); odom.has_value()) {
+          stm32_odom_.Publish(*odom);
+          last_stm32_rx_ns_.store(common::ToNanoseconds(odom->stamp), std::memory_order_release);
+          made_progress = true;
+        }
+        if (auto referee = stm32_bridge_.TakeRefereeState(); referee.has_value()) {
+          referee_state_.Publish(*referee);
+          last_stm32_rx_ns_.store(common::ToNanoseconds(referee->stamp),
+                                  std::memory_order_release);
+          made_progress = true;
+        }
+      }
     }
 
     const auto now_window = common::Now();
@@ -2001,14 +2092,20 @@ void Runtime::DriverThreadMain() {
       cpu_window_begin = now_window;
       cpu_time_begin_ns = cpu_time_now_ns;
     }
+
+    if (!made_progress) {
+      common::SleepFor(std::chrono::milliseconds(2));
+    }
   }
 }
 
 void Runtime::SyncThreadMain() {
   while (!stop_requested_.load(std::memory_order_acquire)) {
+    if (!sensor_sync_.WaitForLidarFrame(std::chrono::milliseconds(10))) {
+      continue;
+    }
     const auto status = sensor_sync_.ProcessOnce();
     if (!status.ok()) {
-      common::SleepFor(std::chrono::milliseconds(2));
       continue;
     }
     const auto perf = sensor_sync_.LatestPerf();
@@ -2029,6 +2126,9 @@ void Runtime::SyncThreadMain() {
         utils::LogWarn("sync", "fanout pool exhausted for mapping");
       } else if (!mapping_queue_.try_push(std::move(mapping_frame))) {
         utils::LogWarn("sync", "mapping queue is full");
+      } else {
+        pending_mapping_frames_.fetch_add(1, std::memory_order_release);
+        mapping_queue_wait_cv_.notify_one();
       }
     }
 
@@ -2078,6 +2178,10 @@ void Runtime::PoseThreadMain() {
       }
       sync::SyncedFrameHandle handle;
       if (mapping_queue_.try_pop(&handle)) {
+        const auto pending = pending_mapping_frames_.load(std::memory_order_acquire);
+        if (pending > 0U) {
+          pending_mapping_frames_.fetch_sub(1, std::memory_order_acq_rel);
+        }
         const auto known_dynamic_obstacles = mot_manager_.LatestObstacles();
         const auto status =
             mapping_engine_.Update(*handle.get(), external_pose, known_dynamic_obstacles.obstacles);
@@ -2113,7 +2217,18 @@ void Runtime::PoseThreadMain() {
     }
 
     if (!progressed) {
-      common::SleepFor(std::chrono::milliseconds(2));
+      if (fsm_snapshot.mapping_active) {
+        std::unique_lock<std::mutex> lock(mapping_queue_wait_mutex_);
+        mapping_queue_wait_cv_.wait_for(lock, std::chrono::milliseconds(10), [this]() {
+          return pending_mapping_frames_.load(std::memory_order_acquire) > 0U ||
+                 stop_requested_.load(std::memory_order_acquire);
+        });
+      } else if (fsm_snapshot.localization_active &&
+                 combat_pipeline_ready_.load(std::memory_order_acquire)) {
+        localization_.WaitForInput(std::chrono::milliseconds(10));
+      } else {
+        common::SleepFor(std::chrono::milliseconds(2));
+      }
     }
   }
 }
@@ -2133,7 +2248,7 @@ void Runtime::PerceptionThreadMain() {
 
     const auto preprocess_status = preprocess_.ProcessOnce();
     if (!preprocess_status.ok()) {
-      common::SleepFor(std::chrono::milliseconds(2));
+      preprocess_.WaitForInput(std::chrono::milliseconds(10));
     }
 
     auto filtered_frame = preprocess_.TryPopFilteredFrameHandle();
@@ -2149,7 +2264,12 @@ void Runtime::PerceptionThreadMain() {
                          static_cast<float>(loaded_config_.spawn.theta_rad));
     }
     if (pose.is_valid) {
-      latest_filtered_scan_.Publish(*filtered_frame->get());
+      if (loaded_config_.debug.websocket_enabled) {
+        latest_filtered_scan_.Publish(
+            BuildDebugScanSnapshot(*filtered_frame->get(),
+                                   static_cast<std::size_t>(std::max(
+                                       1, loaded_config_.debug.debug_scan_max_points))));
+      }
       mot_manager_.UpdateAndPublish(*filtered_frame->get(), pose);
       const auto obstacles = mot_manager_.LatestObstacles();
       local_costmap_builder_.BuildAndPublish(*filtered_frame->get(), pose,
@@ -2200,6 +2320,11 @@ void Runtime::PlannerThreadMain() {
       const auto costmap = local_costmap_builder_.LatestCostmap();
       const auto obstacles = mot_manager_.LatestObstacles();
       if (pose.is_valid && costmap.width != 0U) {
+        const auto referee = referee_state_.ReadSnapshot();
+        const auto planner_status = planner_.LatestStatus();
+        const auto match_decision =
+            match_mode_controller_.Update(common::Now(), referee, pose, planner_status);
+        latest_match_mode_decision_.Publish(match_decision);
         planning::PlanningOverrides planning_overrides;
         const planning::PlanningOverrides* overrides = nullptr;
         if (fsm_snapshot.recovery_active) {
@@ -2210,7 +2335,12 @@ void Runtime::PlannerThreadMain() {
           planning_overrides.temporary_goal_valid = recovery_status.temporary_goal_valid;
           overrides = &planning_overrides;
         }
-        planner_.PlanAndPublish(pose, costmap, obstacles.obstacles, overrides);
+        if (match_decision.override_goal) {
+          planner_.PlanAndPublishToGoal(pose, match_decision.goal_pose, costmap,
+                                        obstacles.obstacles, overrides);
+        } else {
+          planner_.PlanAndPublish(pose, costmap, obstacles.obstacles, overrides);
+        }
         planner_latency_ns_.store(planner_.LatestStatus().planning_latency_ns,
                                   std::memory_order_release);
         planned_cycles_.fetch_add(1, std::memory_order_relaxed);
@@ -2378,10 +2508,29 @@ void Runtime::DebugThreadMain() {
   const auto scalar_period = LoopPeriodFromHz(loaded_config_.debug.scalar_publish_hz, 50);
   const auto pointcloud_period =
       LoopPeriodFromHz(loaded_config_.debug.pointcloud_publish_hz, 200);
+  const auto watchdog_period =
+      LoopPeriodFromHz(loaded_config_.debug.watchdog_write_hz, 1000);
+  const std::filesystem::path debug_output_dir(RuntimeDebugOutputDir());
   auto next_log = common::Now();
   auto next_scalar_publish = common::Now();
   auto next_pointcloud_publish = common::Now();
+  auto next_watchdog_write = common::Now();
   std::uint64_t last_safety_event_generation = latest_safety_event_.generation();
+  bool mapping_snapshot_written = false;
+  std::uint64_t last_mapping_snapshot_frames = 0;
+  std::uint64_t last_mapping_cmd_generation = mapping_cmd_.generation();
+  std::uint64_t last_mapping_pose_generation = mapping_pose_.generation();
+  int last_mapping_save_trigger = mapping_save_trigger_.load(std::memory_order_acquire);
+  bool localization_snapshot_written = false;
+  std::uint64_t last_localized_snapshot_frames = 0;
+  std::uint64_t last_planner_snapshot_cycles = 0;
+  std::uint64_t last_recovery_snapshot_generation = latest_recovery_status_.generation();
+  std::uint64_t last_safety_snapshot_generation = latest_safety_result_.generation();
+  std::string last_fsm_status_json;
+  std::string last_fsm_event_json;
+  std::string last_perf_status_json;
+  std::string last_runtime_state_json;
+  std::string last_watchdog_json;
   while (!stop_requested_.load(std::memory_order_acquire)) {
     const auto now = common::Now();
     if (now >= next_log) {
@@ -2391,6 +2540,7 @@ void Runtime::DebugThreadMain() {
       const auto planner_status = planner_.LatestStatus();
       const auto safety_result = latest_safety_result_.ReadSnapshot();
       const auto recovery_status = latest_recovery_status_.ReadSnapshot();
+      const auto match_decision = latest_match_mode_decision_.ReadSnapshot();
       const auto planner_cmd = planner_.LatestCmd();
       const auto save_trigger = static_cast<MappingSaveTrigger>(
           mapping_save_trigger_.load(std::memory_order_acquire));
@@ -2457,6 +2607,10 @@ void Runtime::DebugThreadMain() {
                << ", cause=" << fsm::ToString(recovery_status.cause)
                << ", action=" << fsm::ToString(recovery_status.action)
                << ", strategy=" << recovery_status.strategy << ")"
+               << " match(phase=" << ToString(match_decision.phase)
+               << ", reason=" << match_decision.reason
+               << ", wait_ms=" << match_decision.wait_remaining_ns / 1000000LL
+               << ", rearm=" << (match_decision.rearm_required ? "true" : "false") << ")"
                << " why(no_move="
                << WhyRobotNotMoving(fsm_snapshot, localization_result, planner_status,
                                     safety_result)
@@ -2483,9 +2637,65 @@ void Runtime::DebugThreadMain() {
              << ", driver_cpu=" << driver_cpu_usage_milli_.load(std::memory_order_acquire) / 10.0
              << "%)";
       utils::LogInfo("debug", stream.str());
+      if (now >= next_watchdog_write) {
+        next_watchdog_write = now + watchdog_period;
+        const auto watchdog_json = BuildHeartbeatJson(now, fsm_snapshot.state);
+        WriteTextFileIfChanged("logs/watchdog/process_heartbeat.json", watchdog_json,
+                               &last_watchdog_json);
+      }
+      const bool allow_scalar_publish = now >= next_scalar_publish;
+      if (allow_scalar_publish) {
+        next_scalar_publish = now + scalar_period;
+        const auto scalar_begin_ns = common::NowNs();
+        const auto fsm_status_json = BuildFsmStatusJson(fsm_snapshot);
+        const auto fsm_event_json = BuildFsmEventJson(fsm_snapshot.last_event);
+        WriteFsmDebugSnapshot(fsm_status_json, fsm_event_json, debug_output_dir,
+                              &last_fsm_status_json, &last_fsm_event_json);
+        auto current_pose = fsm_snapshot.mapping_active ? mapping_pose_.ReadSnapshot()
+                                                        : localization_.LatestResult().map_to_base;
+        if (PerceptionBringupMode() && !current_pose.is_valid) {
+          current_pose = MakeMapPose(now, static_cast<float>(loaded_config_.spawn.x_m),
+                                     static_cast<float>(loaded_config_.spawn.y_m),
+                                     static_cast<float>(loaded_config_.spawn.theta_rad));
+        }
+        const auto current_cmd =
+            fsm_snapshot.mapping_active ? mapping_cmd_.ReadSnapshot() : safety_cmd_.ReadSnapshot();
+        const auto perf_json = BuildPerfStatusJson(
+            driver_cpu_usage_milli_.load(std::memory_order_acquire),
+            sync_process_latency_ns_.load(std::memory_order_acquire),
+            sync_preintegration_latency_ns_.load(std::memory_order_acquire),
+            sync_deskew_latency_ns_.load(std::memory_order_acquire),
+            localization_latency_ns_.load(std::memory_order_acquire),
+            localization_matcher_latency_ns_.load(std::memory_order_acquire),
+            localization_light_mode_.load(std::memory_order_acquire),
+            mot_clustering_latency_ns_.load(std::memory_order_acquire),
+            mot_total_latency_ns_.load(std::memory_order_acquire),
+            mot_reduced_roi_active_.load(std::memory_order_acquire),
+            planner_latency_ns_.load(std::memory_order_acquire),
+            safety_tick_latency_ns_.load(std::memory_order_acquire),
+            foxglove_publish_latency_ns_.load(std::memory_order_acquire),
+            debug_encode_latency_ns_.load(std::memory_order_acquire),
+            debug_scene_suppressed_.load(std::memory_order_acquire));
+        WriteTextFileIfChanged(debug_output_dir / "perf_status.json", perf_json,
+                               &last_perf_status_json);
+        WriteTextFileIfChanged("logs/crash/last_runtime_state.json", perf_json,
+                               &last_runtime_state_json);
+        if (loaded_config_.debug.websocket_enabled) {
+          PublishFoxgloveJson(&foxglove_server_, kRuntimeFsmStatusChannelId, fsm_status_json,
+                              now);
+          PublishFoxgloveJson(&foxglove_server_, kRuntimeFsmEventChannelId, fsm_event_json,
+                              now);
+          PublishFoxgloveJson(&foxglove_server_, kRuntimePoseChannelId,
+                              BuildPoseJson(current_pose), now);
+          PublishFoxgloveJson(&foxglove_server_, kRuntimeCmdChannelId,
+                              BuildCmdJson(current_cmd), now);
+          PublishFoxgloveJson(&foxglove_server_, kRuntimePerfStatusChannelId, perf_json, now);
+        }
+        debug_encode_latency_ns_.store(common::NowNs() - scalar_begin_ns,
+                                       std::memory_order_release);
+      }
       if (loaded_config_.debug.websocket_enabled) {
         const auto debug_begin_ns = common::NowNs();
-        const bool allow_scalar_publish = now >= next_scalar_publish;
         const bool allow_pointcloud_publish = now >= next_pointcloud_publish;
         const bool high_debug_load =
             foxglove_publish_latency_ns_.load(std::memory_order_acquire) >
@@ -2498,54 +2708,6 @@ void Runtime::DebugThreadMain() {
             high_debug_load && loaded_config_.debug.drop_pointcloud_on_high_load;
         debug_scene_suppressed_.store(suppress_scene, std::memory_order_release);
 
-        if (allow_scalar_publish) {
-          next_scalar_publish = now + scalar_period;
-          const auto scalar_begin_ns = common::NowNs();
-          WriteFsmDebugSnapshot(fsm_snapshot, RuntimeDebugOutputDir());
-          auto current_pose = fsm_snapshot.mapping_active ? mapping_pose_.ReadSnapshot()
-                                                          : localization_.LatestResult().map_to_base;
-          if (PerceptionBringupMode() && !current_pose.is_valid) {
-            current_pose = MakeMapPose(now, static_cast<float>(loaded_config_.spawn.x_m),
-                                       static_cast<float>(loaded_config_.spawn.y_m),
-                                       static_cast<float>(loaded_config_.spawn.theta_rad));
-          }
-          const auto current_cmd =
-              fsm_snapshot.mapping_active ? mapping_cmd_.ReadSnapshot() : safety_cmd_.ReadSnapshot();
-          const auto perf_json = BuildPerfStatusJson(
-              driver_cpu_usage_milli_.load(std::memory_order_acquire),
-              sync_process_latency_ns_.load(std::memory_order_acquire),
-              sync_preintegration_latency_ns_.load(std::memory_order_acquire),
-              sync_deskew_latency_ns_.load(std::memory_order_acquire),
-              localization_latency_ns_.load(std::memory_order_acquire),
-              localization_matcher_latency_ns_.load(std::memory_order_acquire),
-              localization_light_mode_.load(std::memory_order_acquire),
-              mot_clustering_latency_ns_.load(std::memory_order_acquire),
-              mot_total_latency_ns_.load(std::memory_order_acquire),
-              mot_reduced_roi_active_.load(std::memory_order_acquire),
-              planner_latency_ns_.load(std::memory_order_acquire),
-              safety_tick_latency_ns_.load(std::memory_order_acquire),
-              foxglove_publish_latency_ns_.load(std::memory_order_acquire),
-              debug_encode_latency_ns_.load(std::memory_order_acquire),
-              debug_scene_suppressed_.load(std::memory_order_acquire));
-          WritePerfDebugSnapshot(perf_json, RuntimeDebugOutputDir());
-          PublishFoxgloveJson(&foxglove_server_, kRuntimeFsmStatusChannelId,
-                              BuildFsmStatusJson(fsm_snapshot), now);
-          PublishFoxgloveJson(&foxglove_server_, kRuntimeFsmEventChannelId,
-                              BuildFsmEventJson(fsm_snapshot.last_event), now);
-          PublishFoxgloveJson(&foxglove_server_, kRuntimePoseChannelId,
-                              BuildPoseJson(current_pose), now);
-          PublishFoxgloveJson(&foxglove_server_, kRuntimeCmdChannelId,
-                              BuildCmdJson(current_cmd), now);
-          PublishFoxgloveJson(&foxglove_server_, kRuntimePerfStatusChannelId, perf_json, now);
-          std::filesystem::create_directories("logs/watchdog");
-          std::ofstream heartbeat("logs/watchdog/process_heartbeat.json");
-          heartbeat << "{\n  \"stamp_ns\": " << common::ToNanoseconds(now)
-                    << ",\n  \"state\": \"" << fsm::ToString(fsm_snapshot.state)
-                    << "\"\n}\n";
-          debug_encode_latency_ns_.store(common::NowNs() - scalar_begin_ns,
-                                         std::memory_order_release);
-        }
-
         if (allow_pointcloud_publish && !suppress_scene && fsm_snapshot.mapping_active) {
           next_pointcloud_publish = now + pointcloud_period;
           const auto publish_begin_ns = common::NowNs();
@@ -2555,10 +2717,25 @@ void Runtime::DebugThreadMain() {
                                        static_cast<float>(loaded_config_.spawn.y_m),
                                        static_cast<float>(loaded_config_.spawn.theta_rad));
           }
-          WriteMappingDebugSnapshot(mapping_engine_, waypoint_manager_,
-                                    mapping_pose_.ReadSnapshot(), mapping_cmd_.ReadSnapshot(),
-                                    save_trigger,
-                                    RuntimeDebugOutputDir());
+          const auto mapped_frames = mapped_frames_.load(std::memory_order_acquire);
+          const auto mapping_cmd_generation = mapping_cmd_.generation();
+          const auto mapping_pose_generation = mapping_pose_.generation();
+          const int mapping_save_trigger = static_cast<int>(save_trigger);
+          if (!loaded_config_.debug.write_snapshots_only_on_change ||
+              !mapping_snapshot_written ||
+              mapped_frames != last_mapping_snapshot_frames ||
+              mapping_cmd_generation != last_mapping_cmd_generation ||
+              mapping_pose_generation != last_mapping_pose_generation ||
+              mapping_save_trigger != last_mapping_save_trigger) {
+            WriteMappingDebugSnapshot(mapping_engine_, waypoint_manager_,
+                                      mapping_pose_.ReadSnapshot(), mapping_cmd_.ReadSnapshot(),
+                                      save_trigger, debug_output_dir);
+            mapping_snapshot_written = true;
+            last_mapping_snapshot_frames = mapped_frames;
+            last_mapping_cmd_generation = mapping_cmd_generation;
+            last_mapping_pose_generation = mapping_pose_generation;
+            last_mapping_save_trigger = mapping_save_trigger;
+          }
           const auto mapping_status_json =
               BuildRuntimeMappingStatusJson(mapping_engine_, waypoint_manager_, save_trigger);
           const auto waypoint_json = BuildScalarPoseJson(
@@ -2611,9 +2788,24 @@ void Runtime::DebugThreadMain() {
           next_pointcloud_publish = now + pointcloud_period;
           const auto publish_begin_ns = common::NowNs();
           auto current_pose = localization_.LatestResult().map_to_base;
-          WriteDebugSnapshot(localization_, planner_, latest_recovery_status_.ReadSnapshot(),
-                             latest_safety_result_.ReadSnapshot(),
-                             RuntimeDebugOutputDir());
+          const auto localized_frames = localized_frames_.load(std::memory_order_acquire);
+          const auto planned_cycles = planned_cycles_.load(std::memory_order_acquire);
+          const auto recovery_generation = latest_recovery_status_.generation();
+          const auto safety_generation = latest_safety_result_.generation();
+          if (!loaded_config_.debug.write_snapshots_only_on_change ||
+              !localization_snapshot_written ||
+              localized_frames != last_localized_snapshot_frames ||
+              planned_cycles != last_planner_snapshot_cycles ||
+              recovery_generation != last_recovery_snapshot_generation ||
+              safety_generation != last_safety_snapshot_generation) {
+            WriteDebugSnapshot(localization_, planner_, latest_recovery_status_.ReadSnapshot(),
+                               latest_safety_result_.ReadSnapshot(), debug_output_dir);
+            localization_snapshot_written = true;
+            last_localized_snapshot_frames = localized_frames;
+            last_planner_snapshot_cycles = planned_cycles;
+            last_recovery_snapshot_generation = recovery_generation;
+            last_safety_snapshot_generation = safety_generation;
+          }
           const auto costmap_scene_json = BuildSceneUpdateJson(
               "runtime_local_costmap", tf::kMapFrame,
               CostmapOccupiedPoints(local_costmap_builder_.LatestCostmap(), 1200U), 0.10F, 0.04F,
@@ -2758,12 +2950,15 @@ common::Status Runtime::InitializeCombatPipelineFromSavedMap() {
 }
 
 bool Runtime::RefereeStartRequired(bool for_mapping) const {
+  (void)for_mapping;
+  if (loaded_config_.system.match_mode_enabled) {
+    return true;
+  }
   if (loaded_config_.system.bringup_mode != "none" || !loaded_config_.comm.stm32_enabled ||
       !stm32_available_.load(std::memory_order_acquire)) {
     return false;
   }
-  return for_mapping ? loaded_config_.system.require_referee_start_for_warmup
-                     : loaded_config_.system.require_referee_start_for_combat;
+  return false;
 }
 
 bool Runtime::RefereeStartAuthorized(bool for_mapping) const {
@@ -2821,6 +3016,7 @@ fsm::NavFsmContext Runtime::BuildFsmContext(bool referee_changed) const {
   if (context.combat_ready) {
     const auto localization_result = localization_.LatestResult();
     const auto planner_status = planner_.LatestStatus();
+    const auto match_decision = latest_match_mode_decision_.ReadSnapshot();
     const auto safety_result = latest_safety_result_.ReadSnapshot();
     const auto recovery_status = latest_recovery_status_.ReadSnapshot();
     const auto latest_cmd = planner_.LatestCmd();
@@ -2839,6 +3035,11 @@ fsm::NavFsmContext Runtime::BuildFsmContext(bool referee_changed) const {
     context.recovery_exhausted = recovery_status.exhausted;
     context.recovery_needs_relocalization = recovery_status.requires_relocalization;
     context.recovery_strategy = recovery_status.strategy;
+    if (loaded_config_.system.match_mode_enabled) {
+      context.recovery_strategy +=
+          std::string("|match=") + ToString(match_decision.phase) + ":" +
+          match_decision.reason;
+    }
     context.localization_degraded =
         localization_result.map_to_base.is_valid &&
         (!localization_result.status.pose_trusted ||
@@ -2856,7 +3057,7 @@ fsm::NavFsmContext Runtime::BuildFsmContext(bool referee_changed) const {
         context.planner_failed = true;
       }
     }
-    context.center_reached = planner_status.reached;
+    context.center_reached = planner_status.reached && match_decision.count_as_center_goal;
     context.center_drifted = planner_status.hold_drifted;
 
     const auto pose = localization_result.map_to_base;

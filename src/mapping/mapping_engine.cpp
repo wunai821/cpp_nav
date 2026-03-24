@@ -361,7 +361,7 @@ void MappingEngine::CaptureKeyframe(const data::SyncedFrame& frame,
       static_cast<std::size_t>(std::max(1, config_.keyframe_max_points));
   keyframe.local_points.reserve(std::min(point_limit, frame.lidar.points.size()));
   if (frame.lidar.points.size() <= point_limit) {
-    keyframe.local_points = frame.lidar.points;
+    keyframe.local_points = frame.lidar.points.view();
   } else {
     for (std::size_t index = 0; index < point_limit; ++index) {
       const std::size_t source_index = (index * frame.lidar.points.size()) / point_limit;
@@ -540,7 +540,7 @@ common::Status MappingEngine::ResolveMappingPose(const data::SyncedFrame& frame,
       *pose_is_map_aligned = true;
       return common::Status::Ok();
     }
-    local_map.global_points = previous_scan_.points;
+    local_map.global_points = previous_scan_.points.view();
     local_map.global_map_loaded = true;
     latest_result_.frontend_reference_points = local_map.global_points.size();
     initial_guess = RelativePose2D(previous_external_pose_, external_pose);

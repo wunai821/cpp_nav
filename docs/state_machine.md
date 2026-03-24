@@ -157,10 +157,8 @@
   只允许 `MODE_WARMUP + MODE_SAVE`
 - `manual_mode_selector: 1`
   只允许 combat 主链
-- `require_referee_start_for_warmup: true`
-  建图链是否必须等裁判/下位机开始信号；调试热身时可临时关
-- `require_referee_start_for_combat: true`
-  combat 主链是否必须等裁判/下位机开始信号；调试定位/规划时可临时关
+- `match_mode_enabled: true`
+  比赛模式总开关；打开后建图链和 combat 主链都会统一等待裁判/下位机开始信号，同时启用 `HP/ammo` 触发的补给/回血流程
 
 `mapping.enabled` 和 `localization.enabled` 现在只保留为兼容字段，不再作为 runtime 主链切模式入口。
 

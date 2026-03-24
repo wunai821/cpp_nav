@@ -3,6 +3,7 @@
 #include <deque>
 #include <cstddef>
 #include <cstdint>
+#include <chrono>
 #include <optional>
 #include <string>
 #include <vector>
@@ -32,6 +33,7 @@ struct L1DriverConfig {
 class L1Driver {
  public:
   common::Status Configure(const L1DriverConfig& config);
+  bool WaitForData(std::chrono::milliseconds timeout);
   std::optional<data::LidarFrame> PollFrame();
   std::optional<data::ImuPacket> PollImuPacket();
 

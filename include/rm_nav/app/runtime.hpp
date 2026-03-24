@@ -1,12 +1,15 @@
 #pragma once
 
 #include <atomic>
+#include <condition_variable>
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
 
 #include "rm_nav/app/bootstrap.hpp"
+#include "rm_nav/app/match_mode_controller.hpp"
 #include "rm_nav/common/double_buffer.hpp"
 #include "rm_nav/common/status.hpp"
 #include "rm_nav/config/config_loader.hpp"
@@ -123,6 +126,7 @@ class Runtime {
   planning::RecoveryPlanner recovery_planner_{};
   safety::SafetyManager safety_manager_{};
   debug::FoxgloveServer foxglove_server_{};
+  MatchModeController match_mode_controller_{};
   common::SpscRingQueue<sync::SyncedFrameHandle, 16> mapping_queue_{};
 
   fsm::NavFsm nav_fsm_{};
@@ -133,9 +137,13 @@ class Runtime {
   common::DoubleBuffer<data::LidarFrame> latest_filtered_scan_{};
   common::DoubleBuffer<data::OdomState> stm32_odom_{};
   common::DoubleBuffer<data::RefereeState> referee_state_{};
+  common::DoubleBuffer<MatchModeDecision> latest_match_mode_decision_{};
   common::DoubleBuffer<data::SafetyEvent> latest_safety_event_{};
   common::DoubleBuffer<safety::SafetyResult> latest_safety_result_{};
   common::DoubleBuffer<planning::RecoveryPlannerStatus> latest_recovery_status_{};
+  mutable std::mutex mapping_queue_wait_mutex_{};
+  std::condition_variable mapping_queue_wait_cv_{};
+  std::atomic<std::uint32_t> pending_mapping_frames_{0};
 
   std::atomic<std::uint64_t> driver_lidar_frames_{0};
   std::atomic<std::uint64_t> driver_imu_packets_{0};

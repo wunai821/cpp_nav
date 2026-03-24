@@ -11,6 +11,7 @@ common::Status SensorSync::Configure(const SyncConfig& config) {
     return common::Status::InvalidArgument("invalid sync imu packet limit");
   }
   config_ = config;
+  imu_backlog_head_ = 0;
   imu_backlog_size_ = 0;
   dropped_imu_packets_ = 0;
   dropped_lidar_frames_ = 0;
@@ -35,8 +36,21 @@ common::Status SensorSync::PushLidarFrame(const data::LidarFrame& frame) {
   }
   if (!lidar_queue_.try_push(frame)) {
     ++dropped_lidar_frames_;
+  } else {
+    pending_lidar_frames_.fetch_add(1, std::memory_order_release);
+    lidar_wait_cv_.notify_one();
   }
   return common::Status::Ok();
+}
+
+bool SensorSync::WaitForLidarFrame(std::chrono::milliseconds timeout) const {
+  if (pending_lidar_frames_.load(std::memory_order_acquire) > 0U) {
+    return true;
+  }
+  std::unique_lock<std::mutex> lock(lidar_wait_mutex_);
+  return lidar_wait_cv_.wait_for(lock, timeout, [this]() {
+    return pending_lidar_frames_.load(std::memory_order_acquire) > 0U;
+  });
 }
 
 common::Status SensorSync::ProcessOnce() {
@@ -50,6 +64,10 @@ common::Status SensorSync::ProcessOnce() {
   data::LidarFrame lidar_frame;
   if (!lidar_queue_.try_pop(&lidar_frame)) {
     return common::Status::NotReady("no lidar frame available");
+  }
+  const auto pending = pending_lidar_frames_.load(std::memory_order_acquire);
+  if (pending > 0U) {
+    pending_lidar_frames_.fetch_sub(1, std::memory_order_acq_rel);
   }
 
   auto handle = synced_frame_pool_.Acquire();
@@ -96,16 +114,18 @@ std::optional<data::SyncedFrame> SensorSync::TryPopSyncedFrame() {
 }
 
 void SensorSync::DrainImuQueue() {
+  const std::size_t capacity = imu_backlog_.size();
   data::ImuPacket packet;
   while (imu_queue_.try_pop(&packet)) {
-    if (imu_backlog_size_ >= imu_backlog_.size()) {
-      for (std::size_t index = 1; index < imu_backlog_size_; ++index) {
-        imu_backlog_[index - 1U] = imu_backlog_[index];
-      }
-      --imu_backlog_size_;
+    if (imu_backlog_size_ >= capacity) {
+      imu_backlog_[imu_backlog_head_] = packet;
+      imu_backlog_head_ = (imu_backlog_head_ + 1U) % capacity;
       ++dropped_imu_packets_;
+      continue;
     }
-    imu_backlog_[imu_backlog_size_++] = packet;
+    const std::size_t tail = (imu_backlog_head_ + imu_backlog_size_) % capacity;
+    imu_backlog_[tail] = packet;
+    ++imu_backlog_size_;
   }
 }
 
@@ -125,20 +145,30 @@ common::Status SensorSync::BuildSyncedFrame(const data::LidarFrame& lidar_frame,
   const common::TimePoint slice_end = lidar_frame.scan_end_stamp +
                                       std::chrono::nanoseconds(config_.imu_slice_margin_ns);
 
+  const std::size_t capacity = imu_backlog_.size();
+  while (imu_backlog_size_ > 0U && imu_backlog_[imu_backlog_head_].stamp < slice_begin) {
+    imu_backlog_head_ = (imu_backlog_head_ + 1U) % capacity;
+    --imu_backlog_size_;
+  }
+
   std::size_t kept_count = 0;
-  std::size_t write_index = 0;
-  for (std::size_t read_index = 0; read_index < imu_backlog_size_; ++read_index) {
-    const data::ImuPacket& packet = imu_backlog_[read_index];
-    const bool in_slice = packet.stamp >= slice_begin && packet.stamp <= slice_end &&
-                          kept_count < static_cast<std::size_t>(config_.max_imu_packets_per_frame);
-    if (in_slice) {
+  for (std::size_t logical_index = 0; logical_index < imu_backlog_size_; ++logical_index) {
+    const std::size_t index = (imu_backlog_head_ + logical_index) % capacity;
+    const data::ImuPacket& packet = imu_backlog_[index];
+    if (packet.stamp > slice_end) {
+      break;
+    }
+    if (kept_count < static_cast<std::size_t>(config_.max_imu_packets_per_frame)) {
       synced_frame->imu_packets[kept_count++] = packet;
     }
-    if (packet.stamp > slice_begin) {
-      imu_backlog_[write_index++] = packet;
-    }
   }
-  imu_backlog_size_ = write_index;
+  while (imu_backlog_size_ > 0U && imu_backlog_[imu_backlog_head_].stamp <= slice_begin) {
+    imu_backlog_head_ = (imu_backlog_head_ + 1U) % capacity;
+    --imu_backlog_size_;
+  }
+  if (imu_backlog_size_ == 0U) {
+    imu_backlog_head_ = 0U;
+  }
   synced_frame->imu_packet_count = kept_count;
 
   const auto preintegration_begin_ns = common::NowNs();

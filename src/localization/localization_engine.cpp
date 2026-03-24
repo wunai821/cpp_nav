@@ -154,7 +154,19 @@ common::Status LocalizationEngine::EnqueueFrame(sync::SyncedFrameHandle frame) {
     ++dropped_frames_;
     return common::Status::Unavailable("localization input queue is full");
   }
+  pending_inputs_.fetch_add(1, std::memory_order_release);
+  input_wait_cv_.notify_one();
   return common::Status::Ok();
+}
+
+bool LocalizationEngine::WaitForInput(std::chrono::milliseconds timeout) const {
+  if (pending_inputs_.load(std::memory_order_acquire) > 0U) {
+    return true;
+  }
+  std::unique_lock<std::mutex> lock(input_wait_mutex_);
+  return input_wait_cv_.wait_for(lock, timeout, [this]() {
+    return pending_inputs_.load(std::memory_order_acquire) > 0U;
+  });
 }
 
 void LocalizationEngine::SetLatestOdom(const data::OdomState& odom) {
@@ -166,6 +178,10 @@ common::Status LocalizationEngine::ProcessOnce() {
   sync::SyncedFrameHandle handle;
   if (!input_queue_.try_pop(&handle)) {
     return common::Status::NotReady("no synced frame for localization");
+  }
+  const auto pending = pending_inputs_.load(std::memory_order_acquire);
+  if (pending > 0U) {
+    pending_inputs_.fetch_sub(1, std::memory_order_acq_rel);
   }
 
   LocalizationResult result;

@@ -58,6 +58,13 @@ common::Status Stm32Bridge::SendChassisCmd(const data::ChassisCmd& cmd) {
   return common::Status::Ok();
 }
 
+bool Stm32Bridge::WaitForRx(std::chrono::milliseconds timeout) const {
+  if (!IsOpen()) {
+    return false;
+  }
+  return serial_port_.WaitReadable(timeout);
+}
+
 common::Status Stm32Bridge::SpinOnce() {
   if (!IsOpen()) {
     return common::Status::NotReady("stm32 bridge is not open");

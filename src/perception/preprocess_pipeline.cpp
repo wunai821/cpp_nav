@@ -11,6 +11,7 @@ common::Status PreprocessPipeline::Configure(const PreprocessConfig& config) {
     return common::Status::InvalidArgument("invalid preprocess config");
   }
   config_ = config;
+  expected_filtered_points_ = std::max<std::size_t>(config_.expected_input_points, 32U);
   if (config_.self_mask_enabled && !config_.self_mask_polygon_valid) {
     config_.self_mask_polygon = {{{config_.self_mask_x_min_m, config_.self_mask_y_min_m},
                                   {config_.self_mask_x_max_m, config_.self_mask_y_min_m},
@@ -31,6 +32,10 @@ common::Status PreprocessPipeline::Configure(const PreprocessConfig& config) {
   if (!status.ok()) {
     return status;
   }
+  cropped_points_.clear();
+  nonground_points_.clear();
+  cropped_points_.reserve(expected_filtered_points_);
+  nonground_points_.reserve(expected_filtered_points_);
   configured_ = true;
   return common::Status::Ok();
 }
@@ -43,13 +48,29 @@ common::Status PreprocessPipeline::EnqueueFrame(sync::SyncedFrameHandle frame) {
     ++dropped_frames_;
     return common::Status::Unavailable("preprocess input queue is full");
   }
+  pending_inputs_.fetch_add(1, std::memory_order_release);
+  input_wait_cv_.notify_one();
   return common::Status::Ok();
+}
+
+bool PreprocessPipeline::WaitForInput(std::chrono::milliseconds timeout) const {
+  if (pending_inputs_.load(std::memory_order_acquire) > 0U) {
+    return true;
+  }
+  std::unique_lock<std::mutex> lock(input_wait_mutex_);
+  return input_wait_cv_.wait_for(lock, timeout, [this]() {
+    return pending_inputs_.load(std::memory_order_acquire) > 0U;
+  });
 }
 
 common::Status PreprocessPipeline::ProcessOnce() {
   sync::SyncedFrameHandle input;
   if (!input_queue_.try_pop(&input)) {
     return common::Status::NotReady("no synced frame for preprocess");
+  }
+  const auto pending = pending_inputs_.load(std::memory_order_acquire);
+  if (pending > 0U) {
+    pending_inputs_.fetch_sub(1, std::memory_order_acq_rel);
   }
 
   auto filtered = frame_pool_.Acquire();
@@ -88,17 +109,18 @@ common::Status PreprocessPipeline::Run(const data::SyncedFrame& input,
 
   *filtered = input.lidar;
   filtered->points.clear();
-  std::vector<data::PointXYZI> cropped_points;
-  std::vector<data::PointXYZI> nonground_points;
-  auto status = range_crop_filter_.Apply(input.lidar, &cropped_points);
+  filtered->points.MutableView().reserve(expected_filtered_points_);
+  cropped_points_.clear();
+  nonground_points_.clear();
+  auto status = range_crop_filter_.Apply(input.lidar, &cropped_points_);
   if (!status.ok()) {
     return status;
   }
-  status = ground_filter_.Apply(cropped_points, &nonground_points);
+  status = ground_filter_.Apply(cropped_points_, &nonground_points_);
   if (!status.ok()) {
     return status;
   }
-  status = voxel_filter_.Apply(nonground_points, &filtered->points);
+  status = voxel_filter_.Apply(nonground_points_, &filtered->points.MutableView());
   if (!status.ok()) {
     return status;
   }

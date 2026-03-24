@@ -202,6 +202,20 @@ common::Status ConfigLoader::LoadFromDirectory(
     result.system.version = GetString(merged_values, "version", result.system.version);
     result.system.log_level =
         GetString(merged_values, "log_level", result.system.log_level);
+    result.system.log_file_path =
+        GetString(merged_values, "log_file_path", result.system.log_file_path);
+    result.system.console_io_only =
+        GetBool(merged_values, "console_io_only", result.system.console_io_only);
+    result.system.log_max_queue_size =
+        GetInt(merged_values, "log_max_queue_size", result.system.log_max_queue_size);
+    result.system.match_mode_enabled =
+        GetBool(merged_values, "match_mode_enabled", result.system.match_mode_enabled);
+    result.system.match_low_hp_threshold =
+        GetInt(merged_values, "match_low_hp_threshold",
+               result.system.match_low_hp_threshold);
+    result.system.match_spawn_wait_ms =
+        GetInt(merged_values, "match_spawn_wait_ms",
+               result.system.match_spawn_wait_ms);
     result.system.bringup_mode =
         GetString(merged_values, "bringup_mode", result.system.bringup_mode);
     result.system.auto_shutdown_ms =
@@ -209,12 +223,6 @@ common::Status ConfigLoader::LoadFromDirectory(
     result.system.manual_mode_selector =
         GetInt(merged_values, "manual_mode_selector",
                result.system.manual_mode_selector);
-    result.system.require_referee_start_for_warmup =
-        GetBool(merged_values, "require_referee_start_for_warmup",
-                result.system.require_referee_start_for_warmup);
-    result.system.require_referee_start_for_combat =
-        GetBool(merged_values, "require_referee_start_for_combat",
-                result.system.require_referee_start_for_combat);
     result.system.thread_affinity.driver_cpu =
         GetInt(merged_values, "threads.driver_cpu",
                result.system.thread_affinity.driver_cpu);
@@ -336,12 +344,21 @@ common::Status ConfigLoader::LoadFromDirectory(
     result.debug.scalar_publish_hz =
         GetInt(merged_values, "websocket.scalar_publish_hz",
                result.debug.scalar_publish_hz);
+    result.debug.watchdog_write_hz =
+        GetInt(merged_values, "websocket.watchdog_write_hz",
+               result.debug.watchdog_write_hz);
     result.debug.high_load_debug_threshold_ms =
         GetInt(merged_values, "websocket.high_load_debug_threshold_ms",
                result.debug.high_load_debug_threshold_ms);
     result.debug.drop_pointcloud_on_high_load =
         GetBool(merged_values, "websocket.drop_pointcloud_on_high_load",
                 result.debug.drop_pointcloud_on_high_load);
+    result.debug.write_snapshots_only_on_change =
+        GetBool(merged_values, "websocket.write_snapshots_only_on_change",
+                result.debug.write_snapshots_only_on_change);
+    result.debug.debug_scan_max_points =
+        GetInt(merged_values, "websocket.debug_scan_max_points",
+               result.debug.debug_scan_max_points);
 
     result.localization.enabled =
         GetBool(merged_values, "localization.enabled", result.localization.enabled);
@@ -931,13 +948,16 @@ std::string ConfigLoader::BuildSummary(const LoadedConfig& loaded_config) const 
   summary << "config_dir=" << loaded_config.config_dir
           << ", files=" << loaded_config.loaded_files.size()
           << ", log_level=" << loaded_config.system.log_level
+          << ", log_file=" << loaded_config.system.log_file_path
+          << ", console_io_only="
+          << (loaded_config.system.console_io_only ? "true" : "false")
+          << ", log_max_queue_size=" << loaded_config.system.log_max_queue_size
+          << ", match_mode=" << (loaded_config.system.match_mode_enabled ? "on" : "off")
+          << ", hp_threshold=" << loaded_config.system.match_low_hp_threshold
+          << ", spawn_wait_ms=" << loaded_config.system.match_spawn_wait_ms
           << ", bringup_mode=" << loaded_config.system.bringup_mode
           << ", auto_shutdown_ms=" << loaded_config.system.auto_shutdown_ms
           << ", manual_mode_selector=" << loaded_config.system.manual_mode_selector
-          << ", wait_referee=[warmup:"
-          << (loaded_config.system.require_referee_start_for_warmup ? "on" : "off")
-          << ", combat:"
-          << (loaded_config.system.require_referee_start_for_combat ? "on" : "off") << "]"
           << ", frames=[" << loaded_config.frames.map << ", " << loaded_config.frames.odom
           << ", " << loaded_config.frames.base_link << ", "
           << loaded_config.frames.laser_link << ", " << loaded_config.frames.imu_link
@@ -964,7 +984,9 @@ std::string ConfigLoader::BuildSummary(const LoadedConfig& loaded_config) const 
           << ':' << loaded_config.debug.websocket_host << ':'
           << loaded_config.debug.websocket_port
           << ", scene_hz=" << loaded_config.debug.pointcloud_publish_hz
-          << ", scalar_hz=" << loaded_config.debug.scalar_publish_hz << "]"
+          << ", scalar_hz=" << loaded_config.debug.scalar_publish_hz
+          << ", watchdog_hz=" << loaded_config.debug.watchdog_write_hz
+          << ", scan_pts=" << loaded_config.debug.debug_scan_max_points << "]"
           << ", localization=[enabled="
           << (loaded_config.localization.enabled ? "true" : "false")
           << ", matcher=" << loaded_config.localization.matcher

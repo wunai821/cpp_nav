@@ -60,6 +60,34 @@ int main() {
   assert(DifferentEnough(synced->lidar.points[1].x, second.x) ||
          DifferentEnough(synced->lidar.points[1].y, second.y));
 
+  for (std::size_t index = 0; index < rm_nav::data::SyncedFrame::kMaxImuPackets * 2U + 8U;
+       ++index) {
+    rm_nav::data::ImuPacket overflow_packet;
+    overflow_packet.stamp =
+        rm_nav::common::FromNanoseconds(300000000 + static_cast<long long>(index) * 1000000LL);
+    overflow_packet.sample_index = static_cast<std::uint32_t>(100 + index);
+    overflow_packet.angular_velocity.z = 0.25F;
+    overflow_packet.linear_acceleration.x = 0.1F;
+    overflow_packet.is_valid = true;
+    assert(sync.PushImuPacket(overflow_packet).ok());
+  }
+
+  rm_nav::data::LidarFrame overflow_lidar = lidar;
+  overflow_lidar.scan_begin_stamp = rm_nav::common::FromNanoseconds(540000000);
+  overflow_lidar.scan_end_stamp = rm_nav::common::FromNanoseconds(560000000);
+  overflow_lidar.stamp = overflow_lidar.scan_end_stamp;
+  overflow_lidar.frame_index = 2;
+  assert(sync.PushLidarFrame(overflow_lidar).ok());
+  assert(sync.ProcessOnce().ok());
+
+  auto overflow_synced = sync.TryPopSyncedFrame();
+  assert(overflow_synced.has_value());
+  assert(overflow_synced->imu_packet_count > 0U);
+  assert(sync.dropped_imu_packets() > 0U);
+  assert(overflow_synced->imu_packets[0].stamp >= overflow_lidar.scan_begin_stamp);
+  assert(overflow_synced->imu_packets[overflow_synced->imu_packet_count - 1U].stamp <=
+         overflow_lidar.scan_end_stamp);
+
   std::cout << "test_sensor_sync passed\n";
   return 0;
 }

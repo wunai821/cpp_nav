@@ -218,6 +218,38 @@ common::Status L1Driver::Configure(const L1DriverConfig& config) {
   return common::Status::InvalidArgument("unsupported lidar source: " + config.source);
 }
 
+bool L1Driver::WaitForData(std::chrono::milliseconds timeout) {
+  if (!configured_) {
+    return false;
+  }
+  if (config_.source == "synthetic") {
+    const auto deadline = common::Now() + timeout;
+    if (next_frame_time_ <= common::Now()) {
+      return true;
+    }
+    common::SleepUntil(std::min(next_frame_time_, deadline));
+    return next_frame_time_ <= common::Now();
+  }
+  if (config_.source != "unitree_sdk") {
+    return false;
+  }
+  if (pending_sdk_frame_.has_value() || !pending_sdk_imu_packets_.empty()) {
+    return true;
+  }
+
+  const auto deadline = common::Now() + timeout;
+  while (common::Now() < deadline) {
+    if (PumpUnitreeSdkOnce()) {
+      if (pending_sdk_frame_.has_value() || !pending_sdk_imu_packets_.empty()) {
+        return true;
+      }
+      continue;
+    }
+    ::usleep(500);
+  }
+  return pending_sdk_frame_.has_value() || !pending_sdk_imu_packets_.empty();
+}
+
 std::optional<data::LidarFrame> L1Driver::PollFrame() {
   if (!configured_) {
     return std::nullopt;

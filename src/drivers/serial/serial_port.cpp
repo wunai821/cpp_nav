@@ -4,6 +4,7 @@
 #include <cstring>
 
 #include <fcntl.h>
+#include <poll.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -111,6 +112,21 @@ common::Status SerialPort::Write(const std::uint8_t* data, std::size_t size,
     *bytes_written = total_written;
   }
   return common::Status::Ok();
+}
+
+bool SerialPort::WaitReadable(std::chrono::milliseconds timeout) const {
+  if (!IsOpen()) {
+    return false;
+  }
+
+  pollfd descriptor {};
+  descriptor.fd = fd_;
+  descriptor.events = POLLIN;
+  const int result = ::poll(&descriptor, 1, static_cast<int>(timeout.count()));
+  if (result <= 0) {
+    return false;
+  }
+  return (descriptor.revents & POLLIN) != 0;
 }
 
 common::Status SerialPort::Read(std::uint8_t* buffer, std::size_t capacity,

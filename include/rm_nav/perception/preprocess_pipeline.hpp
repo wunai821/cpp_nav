@@ -1,7 +1,10 @@
 #pragma once
 
 #include <cstdint>
+#include <condition_variable>
+#include <mutex>
 #include <optional>
+#include <vector>
 
 #include "rm_nav/common/types.hpp"
 #include "rm_nav/common/object_pool.hpp"
@@ -33,6 +36,7 @@ struct PreprocessConfig {
   std::array<common::Vec2f, 4> self_mask_polygon{};
   bool self_mask_polygon_valid{false};
   std::size_t max_filtered_frames{8};
+  std::size_t expected_input_points{720};
 };
 
 using FilteredFramePool = common::ObjectPool<data::LidarFrame, 8>;
@@ -43,6 +47,7 @@ class PreprocessPipeline {
   common::Status Configure(const PreprocessConfig& config);
   common::Status EnqueueFrame(sync::SyncedFrameHandle frame);
   common::Status ProcessOnce();
+  bool WaitForInput(std::chrono::milliseconds timeout) const;
   std::optional<FilteredFrameHandle> TryPopFilteredFrameHandle();
   common::Status Run(const data::SyncedFrame& input,
                      data::LidarFrame* filtered);
@@ -57,6 +62,12 @@ class PreprocessPipeline {
   common::SpscRingQueue<sync::SyncedFrameHandle, 16> input_queue_{};
   common::SpscRingQueue<FilteredFrameHandle, 8> output_queue_{};
   FilteredFramePool frame_pool_{};
+  mutable std::mutex input_wait_mutex_{};
+  mutable std::condition_variable input_wait_cv_{};
+  std::atomic<std::uint32_t> pending_inputs_{0};
+  std::vector<data::PointXYZI> cropped_points_{};
+  std::vector<data::PointXYZI> nonground_points_{};
+  std::size_t expected_filtered_points_{0};
   std::uint64_t dropped_frames_{0};
   bool configured_{false};
 };

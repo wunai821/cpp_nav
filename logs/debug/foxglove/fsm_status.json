@@ -1,12 +1,12 @@
 {
-  "state": "RECOVERY",
-  "previous_state": "MODE_COMBAT",
-  "last_event_code": "LOCALIZATION_DEGRADED",
-  "last_event_summary": "localization degraded",
+  "state": "IDLE",
+  "previous_state": "SELF_CHECK",
+  "last_event_code": "SELF_CHECK_PASSED",
+  "last_event_summary": "self check passed",
   "mapping_active": false,
   "waypoint_active": false,
-  "localization_active": true,
+  "localization_active": false,
   "center_hold_active": false,
-  "recovery_active": true,
+  "recovery_active": false,
   "failsafe_active": false
 }

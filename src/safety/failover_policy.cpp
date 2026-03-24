@@ -135,10 +135,13 @@ SafetyPolicyDecision FailoverPolicy::Evaluate(const SafetyPolicyInput& input) {
   } else {
     switch (state_) {
       case SafetyState::kIdle:
-        if (input.start_signal_active && input.arming_ready && input.localization_pose_trusted &&
-            !input.localization_degraded && (!input.costmap_required ||
-                                             (input.costmap_valid && input.costmap_fresh)) &&
-            !input.mode_transition_active) {
+        if (input.start_signal_active && input.arming_ready && input.navigation_requested &&
+            transient_hold) {
+          state_ = SafetyState::kHold;
+        } else if (input.start_signal_active && input.arming_ready &&
+                   input.localization_pose_trusted && !input.localization_degraded &&
+                   (!input.costmap_required || (input.costmap_valid && input.costmap_fresh)) &&
+                   !input.mode_transition_active) {
           state_ = SafetyState::kArmed;
         }
         break;

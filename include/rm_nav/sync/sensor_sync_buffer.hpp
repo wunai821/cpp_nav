@@ -1,7 +1,9 @@
 #pragma once
 
 #include <array>
+#include <condition_variable>
 #include <cstdint>
+#include <mutex>
 #include <optional>
 
 #include "rm_nav/common/double_buffer.hpp"
@@ -37,6 +39,7 @@ class SensorSync {
   common::Status PushImuPacket(const data::ImuPacket& packet);
   common::Status PushLidarFrame(const data::LidarFrame& frame);
   common::Status ProcessOnce();
+  bool WaitForLidarFrame(std::chrono::milliseconds timeout) const;
   std::optional<SyncedFrameHandle> TryPopSyncedFrameHandle();
   std::optional<data::SyncedFrame> TryPopSyncedFrame();
   SyncPerfSnapshot LatestPerf() const { return latest_perf_.ReadSnapshot(); }
@@ -61,7 +64,11 @@ class SensorSync {
   common::SpscRingQueue<SyncedFrameHandle, 8> output_queue_{};
   SyncedFramePool synced_frame_pool_{};
   common::DoubleBuffer<SyncPerfSnapshot> latest_perf_{};
+  mutable std::mutex lidar_wait_mutex_{};
+  mutable std::condition_variable lidar_wait_cv_{};
+  std::atomic<std::uint32_t> pending_lidar_frames_{0};
   std::array<data::ImuPacket, data::SyncedFrame::kMaxImuPackets * 2> imu_backlog_{};
+  std::size_t imu_backlog_head_{0};
   std::size_t imu_backlog_size_{0};
   std::uint64_t dropped_imu_packets_{0};
   std::uint64_t dropped_lidar_frames_{0};

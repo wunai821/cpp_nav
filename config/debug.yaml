@@ -6,5 +6,8 @@ websocket:  # 调试发布通道配置，用于可视化和外部调试工具接
   publish_hz: 20  # 调试数据发布频率，单位 Hz。
   pointcloud_publish_hz: 11  # 点云/SceneUpdate 类大消息的发布频率上限，单位 Hz。
   scalar_publish_hz: 20  # pose/cmd/perf 等轻量标量消息的发布频率上限，单位 Hz。
+  watchdog_write_hz: 1  # 进程心跳文件的落盘频率，单位 Hz；建议保持低频，避免高频文件系统抖动。
   high_load_debug_threshold_ms: 8  # 单次 debug 发布耗时超过该阈值时视为高负载，单位毫秒。
   drop_pointcloud_on_high_load: true  # 高负载时是否自动关闭大点云/SceneUpdate 调试通道，优先保主链。
+  write_snapshots_only_on_change: true  # 调试快照是否仅在内容变化时落盘，建议开启，避免无谓磁盘写入。
+  debug_scan_max_points: 1600  # Debug 线程缓存的当前帧点云最大点数；仅影响可视化，不影响主链处理。

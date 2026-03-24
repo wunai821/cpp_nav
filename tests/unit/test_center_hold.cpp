@@ -18,6 +18,7 @@ int main() {
   planner_config.center_hold_settle_frames = 3;
   planner_config.center_hold_settle_time_ms = 120;
   planner_config.center_hold_slot_radius_m = 0.35;
+  planner_config.center_hold_occupied_radius_m = 0.08;
   planner_config.center_hold_micro_max_v_mps = 0.10;
   rm_nav::planning::PlannerCoordinator planner;
   assert(planner.Initialize(planner_config, map).ok());

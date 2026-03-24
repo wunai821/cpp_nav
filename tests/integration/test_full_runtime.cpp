@@ -23,6 +23,8 @@ int main() {
   const auto active_map_dir = root / "maps" / "combat" / "active";
   const auto watchdog_file = root / "logs" / "watchdog" / "process_heartbeat.json";
   const auto runtime_state_file = root / "logs" / "crash" / "last_runtime_state.json";
+  std::filesystem::remove(watchdog_file);
+  std::filesystem::remove(runtime_state_file);
   std::filesystem::create_directories(config_dir);
 
   const auto map_pcd = (root / "maps" / "combat" / "active" / "global_map.pcd").string();

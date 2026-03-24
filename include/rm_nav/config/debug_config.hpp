@@ -11,8 +11,11 @@ struct DebugConfig {
   int publish_hz{10};
   int pointcloud_publish_hz{5};
   int scalar_publish_hz{20};
+  int watchdog_write_hz{1};
   int high_load_debug_threshold_ms{8};
   bool drop_pointcloud_on_high_load{true};
+  bool write_snapshots_only_on_change{true};
+  int debug_scan_max_points{1600};
 };
 
 }  // namespace rm_nav::config

@@ -21,11 +21,12 @@ rm_nav::data::PointXYZI TransformPoint(const rm_nav::data::PointXYZI& point,
 }
 
 float NormalizeAngle(float angle) {
-  while (angle > static_cast<float>(M_PI)) {
-    angle -= static_cast<float>(2.0 * M_PI);
+  constexpr float kPi = 3.14159265358979323846F;
+  while (angle > kPi) {
+    angle -= 2.0F * kPi;
   }
-  while (angle < static_cast<float>(-M_PI)) {
-    angle += static_cast<float>(2.0 * M_PI);
+  while (angle < -kPi) {
+    angle += 2.0F * kPi;
   }
   return angle;
 }

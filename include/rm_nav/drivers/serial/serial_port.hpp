@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 
@@ -20,6 +21,7 @@ class SerialPort {
 
   common::Status Write(const std::uint8_t* data, std::size_t size,
                        std::size_t* bytes_written = nullptr);
+  bool WaitReadable(std::chrono::milliseconds timeout) const;
   common::Status Read(std::uint8_t* buffer, std::size_t capacity,
                       std::size_t* bytes_read = nullptr);
 

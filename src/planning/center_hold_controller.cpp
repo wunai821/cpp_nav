@@ -172,7 +172,23 @@ common::Status CenterHoldController::BuildHoldCommand(const data::Pose3f& curren
   }
 
   const auto candidates = BuildCandidates(current_pose, target_pose, local_costmap, obstacles);
-  const auto selected = candidates.empty() ? HoldCandidate{} : candidates.front();
+  HoldCandidate selected = candidates.empty() ? HoldCandidate{} : candidates.front();
+  if (selected.slot_index == 0 && selected.occupied) {
+    for (const auto& candidate : candidates) {
+      if (candidate.slot_index != 0 && !candidate.occupied) {
+        selected = candidate;
+        break;
+      }
+    }
+    if (selected.slot_index == 0) {
+      for (const auto& candidate : candidates) {
+        if (candidate.slot_index != 0) {
+          selected = candidate;
+          break;
+        }
+      }
+    }
+  }
   const data::Pose3f hold_pose =
       selected.pose.is_valid ? selected.pose : (target_pose.is_valid ? target_pose : current_pose);
 

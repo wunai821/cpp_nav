@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <optional>
 
@@ -30,6 +31,7 @@ class Stm32Bridge {
 
   common::Status SendHeartbeat();
   common::Status SendChassisCmd(const data::ChassisCmd& cmd);
+  bool WaitForRx(std::chrono::milliseconds timeout) const;
   common::Status SpinOnce();
   std::optional<data::OdomState> TakeOdomState();
   std::optional<data::RefereeState> TakeRefereeState();

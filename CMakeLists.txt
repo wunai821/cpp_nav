@@ -70,6 +70,7 @@ endif()
 add_library(rm_nav_core
   src/app/app.cpp
   src/app/bootstrap.cpp
+  src/app/match_mode_controller.cpp
   src/app/runtime.cpp
   src/common/time.cpp
   src/config/config_loader.cpp
@@ -247,6 +248,7 @@ rm_nav_add_unit_test(test_center_hold tests/unit/test_center_hold.cpp)
 rm_nav_add_unit_test(test_collision_checker tests/unit/test_collision_checker.cpp)
 rm_nav_add_unit_test(test_command_gate tests/unit/test_command_gate.cpp)
 rm_nav_add_unit_test(test_mission_manager tests/unit/test_mission_manager.cpp)
+rm_nav_add_unit_test(test_match_mode_controller tests/unit/test_match_mode_controller.cpp)
 rm_nav_add_unit_test(test_recovery_planner tests/unit/test_recovery_planner.cpp)
 rm_nav_add_unit_test(test_local_costmap_builder tests/unit/test_local_costmap_builder.cpp)
 rm_nav_add_unit_test(test_mot_manager tests/unit/test_mot_manager.cpp)

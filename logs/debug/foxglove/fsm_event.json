@@ -1,5 +1,5 @@
 {
-  "event_code": "LOCALIZATION_DEGRADED",
-  "summary": "localization degraded",
-  "stamp_ns": 1160305951873
+  "event_code": "SELF_CHECK_PASSED",
+  "summary": "self check passed",
+  "stamp_ns": 12842547247354
 }

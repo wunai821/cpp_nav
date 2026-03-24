@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <condition_variable>
+#include <mutex>
 #include <string>
 
 #include "rm_nav/common/double_buffer.hpp"
@@ -42,6 +44,7 @@ class LocalizationEngine {
                             const config::SpawnConfig& spawn_config,
                             tf::TfTreeLite* tf_tree);
   common::Status EnqueueFrame(sync::SyncedFrameHandle frame);
+  bool WaitForInput(std::chrono::milliseconds timeout) const;
   common::Status ProcessOnce();
   common::Status Process(const data::SyncedFrame& frame,
                          LocalizationResult* result);
@@ -72,6 +75,9 @@ class LocalizationEngine {
   config::LocalizationConfig config_{};
   tf::TfTreeLite* tf_tree_{nullptr};
   common::SpscRingQueue<sync::SyncedFrameHandle, 16> input_queue_{};
+  mutable std::mutex input_wait_mutex_{};
+  mutable std::condition_variable input_wait_cv_{};
+  std::atomic<std::uint32_t> pending_inputs_{0};
   common::DoubleBuffer<LocalizationResult> latest_result_{};
   common::DoubleBuffer<data::Pose3f> map_to_odom_{};
   common::DoubleBuffer<data::Pose3f> odom_to_base_{};
