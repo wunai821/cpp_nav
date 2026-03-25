@@ -3,26 +3,26 @@
 
 mot:
   # 欧几里得聚类容差，单位为米。
-  cluster_tolerance_m: 0.45
+  cluster_tolerance_m: 0.30
   # 形成一个聚类所需的最少点数。
-  min_cluster_points: 3
+  min_cluster_points: 5
   # 用于剔除过大合并聚类的点数上限。
   max_cluster_points: 128
   # 机器人周围常规跟踪区域的半径。
-  roi_radius_m: 6.0
+  roi_radius_m: 4.5
   # 当 MOT 负载激增时自动使用的更小跟踪区域半径。
-  reduced_roi_radius_m: 3.5
+  reduced_roi_radius_m: 2.5
   # 聚类与已有轨迹之间的最大关联距离。
-  association_distance_m: 1.0
+  association_distance_m: 0.6
   # 连续丢失这么多帧后丢弃该轨迹。
-  max_missed_frames: 4
+  max_missed_frames: 6
   # 简单卡尔曼滤波器的过程噪声项。
-  process_noise: 0.08
+  process_noise: 0.12
   # 简单卡尔曼滤波器的测量噪声项。
-  measurement_noise: 0.15
+  measurement_noise: 0.12
   # 新建轨迹时赋予的初始置信度。
-  initial_confidence: 0.45
+  initial_confidence: 0.30
   # 将轨迹标记为已确认所需的置信度阈值。
-  confirmation_confidence: 0.60
+  confirmation_confidence: 0.70
   # 用于判断下一周期是否应缩小 ROI 的软时间预算，单位为毫秒。
-  clustering_budget_ms: 3
+  clustering_budget_ms: 4

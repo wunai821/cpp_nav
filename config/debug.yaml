@@ -4,7 +4,7 @@ websocket:  # 调试发布通道配置，用于可视化和外部调试工具接
   host: 0.0.0.0  # WebSocket 监听地址；127.0.0.1 仅允许本机连接，0.0.0.0 表示允许局域网内其他设备连接。
   port: 8765  # 调试服务监听端口。
   publish_hz: 20  # 调试数据发布频率，单位 Hz。
-  pointcloud_publish_hz: 11  # 点云/SceneUpdate 类大消息的发布频率上限，单位 Hz。
+  pointcloud_publish_hz: 15  # 点云/SceneUpdate 类大消息的发布频率上限，单位 Hz。
   scalar_publish_hz: 20  # pose/cmd/perf 等轻量标量消息的发布频率上限，单位 Hz。
   watchdog_write_hz: 1  # 进程心跳文件的落盘频率，单位 Hz；建议保持低频，避免高频文件系统抖动。
   high_load_debug_threshold_ms: 8  # 单次 debug 发布耗时超过该阈值时视为高负载，单位毫秒。

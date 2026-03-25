@@ -7,32 +7,32 @@ localization:  # 定位主配置，用于地图加载、scan matcher 和 map->od
   global_map_pcd_path: ../maps/combat/active/global_map.pcd  # 全局点云地图文件路径；保留给直接 MapLoader/离线工具使用，不再作为 runtime 的手动切图入口。
   map_meta_path: ../maps/combat/active/map_meta.json  # 地图元信息文件路径；保留给直接 MapLoader/离线工具使用，runtime 会从 mapping.active_dir 覆盖这三项。
   matcher: icp  # 当前启用的 scan matcher 类型，例如 icp 或 ndt。
-  max_iterations: 8  # 匹配器每帧最大迭代次数。
-  correspondence_distance_m: 0.8  # 建立点对应关系的最大距离阈值，单位米。
-  min_match_score: 0.5  # 认为匹配可信的最小得分阈值。
+  max_iterations: 10  # 匹配器每帧最大迭代次数。
+  correspondence_distance_m: 0.5  # 建立点对应关系的最大距离阈值，单位米。
+  min_match_score: 0.55  # 认为匹配可信的最小得分阈值。
   max_position_jump_m: 0.3  # 单帧允许的最大位置跳变，超过则视为异常，单位米。
   max_yaw_jump_rad: 0.3  # 单帧允许的最大偏航跳变，超过则视为异常，单位弧度。
   map_downsample_step: 1  # 地图点云下采样步长，1 表示不跳点。
-  slow_match_threshold_ms: 12  # 单帧匹配耗时超过该阈值时切换更轻参数，单位毫秒。
-  reduced_max_iterations: 4  # 降级匹配模式下的最大迭代次数。
+  slow_match_threshold_ms: 15  # 单帧匹配耗时超过该阈值时切换更轻参数，单位毫秒。
+  reduced_max_iterations: 5  # 降级匹配模式下的最大迭代次数。
   reduced_scan_stride: 2  # 降级匹配模式下的扫描跳点步长，2 表示每隔 1 个点取 1 个。
-  relocalization_failure_threshold: 4  # matcher 连续失败达到该次数后进入 coarse relocalization 模式。
-  relocalization_retry_interval_ms: 400  # coarse relocalization 的最小重试间隔，避免每帧重扫全局，单位毫秒。
-  relocalization_submap_radius_m: 6.0  # coarse relocalization 截取局部子图半径，单位米。
-  relocalization_submap_max_points: 640  # coarse relocalization 局部子图最大点数。
+  relocalization_failure_threshold: 3  # matcher 连续失败达到该次数后进入 coarse relocalization 模式。
+  relocalization_retry_interval_ms: 250  # coarse relocalization 的最小重试间隔，避免每帧重扫全局，单位毫秒。
+  relocalization_submap_radius_m: 4.0  # coarse relocalization 截取局部子图半径，单位米。
+  relocalization_submap_max_points: 900  # coarse relocalization 局部子图最大点数。
   relocalization_max_iterations: 14  # coarse relocalization 匹配最大迭代次数。
-  relocalization_min_match_score: 0.35  # coarse relocalization 认为成功的最小得分阈值。
-  relocalization_linear_search_step_m: 1.5  # coarse relocalization 多候选平移搜索步长，单位米。
-  relocalization_yaw_search_step_rad: 0.35  # coarse relocalization 多候选偏航搜索步长，单位弧度。
-  relocalization_stabilization_frames: 3  # coarse relocalization 成功后退出失锁前需要连续稳定观测的最少帧数。
-  relocalization_stabilization_time_ms: 300  # coarse relocalization 成功后退出失锁前需要连续稳定观测的最小时长，单位毫秒。
-  relocalization_map_to_odom_apply_translation_step_m: 0.25  # relocalization 成功后每帧允许的 map->odom 平移收敛步长，单位米。
-  relocalization_map_to_odom_apply_yaw_step_rad: 0.15  # relocalization 成功后每帧允许的 map->odom 偏航收敛步长，单位弧度。
-  relocalization_recovery_spin_wz_radps: 0.35  # 失锁恢复阶段原地减速旋转的建议角速度，单位弧度每秒。
-  relocalization_recovery_backoff_vx_mps: 0.12  # 失锁恢复阶段小范围退让的建议倒车速度，单位米每秒。
+  relocalization_min_match_score: 0.4  # coarse relocalization 认为成功的最小得分阈值。
+  relocalization_linear_search_step_m: 0.8  # coarse relocalization 多候选平移搜索步长，单位米。
+  relocalization_yaw_search_step_rad: 0.26  # coarse relocalization 多候选偏航搜索步长，单位弧度。
+  relocalization_stabilization_frames: 4  # coarse relocalization 成功后退出失锁前需要连续稳定观测的最少帧数。
+  relocalization_stabilization_time_ms: 400  # coarse relocalization 成功后退出失锁前需要连续稳定观测的最小时长，单位毫秒。
+  relocalization_map_to_odom_apply_translation_step_m: 0.15  # relocalization 成功后每帧允许的 map->odom 平移收敛步长，单位米。
+  relocalization_map_to_odom_apply_yaw_step_rad: 0.10  # relocalization 成功后每帧允许的 map->odom 偏航收敛步长，单位弧度。
+  relocalization_recovery_spin_wz_radps: 0.25  # 失锁恢复阶段原地减速旋转的建议角速度，单位弧度每秒。
+  relocalization_recovery_backoff_vx_mps: 0.10  # 失锁恢复阶段小范围退让的建议倒车速度，单位米每秒。
   relocalization_recovery_backoff_ticks: 8  # 小范围退让动作持续的 tick 数，随后自动切回旋转搜索。
-  relocalization_ambiguity_score_gap: 0.03  # 最优与次优候选得分差低于该阈值时，触发相似区域误匹配二次判定。
-  relocalization_ambiguity_translation_m: 1.0  # 相似区域误匹配二次判定要求的最小平移分离，单位米。
-  relocalization_ambiguity_yaw_rad: 0.35  # 相似区域误匹配二次判定要求的最小偏航分离，单位弧度。
-  map_to_odom_guard_translation_m: 0.8  # 单帧 map->odom 平移修正允许的最大跳变量，超过则保护并拒绝更新，单位米。
-  map_to_odom_guard_yaw_rad: 0.45  # 单帧 map->odom 偏航修正允许的最大跳变量，超过则保护并拒绝更新，单位弧度。
+  relocalization_ambiguity_score_gap: 0.05  # 最优与次优候选得分差低于该阈值时，触发相似区域误匹配二次判定。
+  relocalization_ambiguity_translation_m: 0.8  # 相似区域误匹配二次判定要求的最小平移分离，单位米。
+  relocalization_ambiguity_yaw_rad: 0.26  # 相似区域误匹配二次判定要求的最小偏航分离，单位弧度。
+  map_to_odom_guard_translation_m: 0.4  # 单帧 map->odom 平移修正允许的最大跳变量，超过则保护并拒绝更新，单位米。
+  map_to_odom_guard_yaw_rad: 0.25  # 单帧 map->odom 偏航修正允许的最大跳变量，超过则保护并拒绝更新，单位弧度。
