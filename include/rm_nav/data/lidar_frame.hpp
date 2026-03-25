@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <initializer_list>
 #include <memory>
 #include <string_view>
 #include <utility>
@@ -21,6 +22,14 @@ class SharedPointCloud {
   using const_iterator = Storage::const_iterator;
 
   SharedPointCloud() : storage_(std::make_shared<Storage>()) {}
+  SharedPointCloud(std::initializer_list<value_type> init)
+      : storage_(std::make_shared<Storage>(init)) {}
+
+  SharedPointCloud& operator=(std::initializer_list<value_type> init) {
+    EnsureUnique();
+    storage_->assign(init);
+    return *this;
+  }
 
   bool empty() const { return storage_->empty(); }
   size_type size() const { return storage_->size(); }
