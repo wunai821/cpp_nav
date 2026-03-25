@@ -1,9 +1,9 @@
 {
-  "code": "FAILSAFE_OVERRIDE",
+  "code": "POSE_LOST",
   "severity": "CRITICAL",
-  "message": "hold timeout escalated to failsafe",
-  "trigger_source": "mission_timeout",
-  "trigger_threshold": 15000,
+  "message": "localization loss escalated to failsafe",
+  "trigger_source": "localization_failsafe",
+  "trigger_threshold": 800,
   "consecutive_bad_frames": 0,
-  "stamp_ns": 10374138948508
+  "stamp_ns": 19581988580878
 }
