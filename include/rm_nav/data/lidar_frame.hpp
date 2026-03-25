@@ -22,8 +22,22 @@ class SharedPointCloud {
   using const_iterator = Storage::const_iterator;
 
   SharedPointCloud() : storage_(std::make_shared<Storage>()) {}
+  SharedPointCloud(const Storage& points) : storage_(std::make_shared<Storage>(points)) {}
+  SharedPointCloud(Storage&& points) : storage_(std::make_shared<Storage>(std::move(points))) {}
   SharedPointCloud(std::initializer_list<value_type> init)
       : storage_(std::make_shared<Storage>(init)) {}
+
+  SharedPointCloud& operator=(const Storage& points) {
+    EnsureUnique();
+    *storage_ = points;
+    return *this;
+  }
+
+  SharedPointCloud& operator=(Storage&& points) {
+    EnsureUnique();
+    *storage_ = std::move(points);
+    return *this;
+  }
 
   SharedPointCloud& operator=(std::initializer_list<value_type> init) {
     EnsureUnique();
