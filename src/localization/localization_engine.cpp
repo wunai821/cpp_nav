@@ -46,6 +46,33 @@ const char* ToString(RelocalizationPhase phase) {
   }
 }
 
+void IncrementRejectionCounter(const std::string& reason,
+                               LocalizationRejectionCounters* counters) {
+  if (counters == nullptr || reason == "none" || reason.empty()) {
+    return;
+  }
+  ++counters->total;
+  if (reason == "map_unloaded") {
+    ++counters->map_unloaded;
+  } else if (reason == "matcher_not_converged") {
+    ++counters->matcher_not_converged;
+  } else if (reason == "low_match_score") {
+    ++counters->low_match_score;
+  } else if (reason == "pose_jump_guard") {
+    ++counters->pose_jump_guard;
+  } else if (reason == "consecutive_failures") {
+    ++counters->consecutive_failures;
+  } else if (reason == "map_to_odom_guard") {
+    ++counters->map_to_odom_guard;
+  } else if (reason == "relocalization_stabilization_failed") {
+    ++counters->relocalization_stabilization_failed;
+  } else if (reason == "stabilization_window") {
+    ++counters->stabilization_window;
+  } else {
+    ++counters->other;
+  }
+}
+
 }  // namespace
 
 common::Status LocalizationEngine::Initialize(
@@ -60,6 +87,9 @@ common::Status LocalizationEngine::Initialize(
   consecutive_failures_ = 0;
   has_latest_odom_ = false;
   has_trusted_map_to_odom_ = false;
+  last_good_stamp_ = {};
+  consecutive_rejections_ = 0;
+  rejection_counters_ = {};
   last_trusted_map_to_base_ = {};
   static_map_ = {};
 
@@ -338,6 +368,18 @@ common::Status LocalizationEngine::Process(const data::SyncedFrame& frame,
   if (previous.map_to_odom.is_valid &&
       !bypass_map_to_odom_guard &&
       !IsMapToOdomUpdateStable(previous.map_to_odom, result->map_to_odom)) {
+    const float guard_dx = result->map_to_odom.position.x - previous.map_to_odom.position.x;
+    const float guard_dy = result->map_to_odom.position.y - previous.map_to_odom.position.y;
+    result->status.map_to_odom_guard_translation_m =
+        std::sqrt(guard_dx * guard_dx + guard_dy * guard_dy);
+    result->status.map_to_odom_guard_yaw_rad = std::fabs(
+        NormalizeAngle(result->map_to_odom.rpy.z - previous.map_to_odom.rpy.z));
+    result->status.map_to_odom_guard_failed_translation =
+        result->status.map_to_odom_guard_translation_m >
+        static_cast<float>(config_.map_to_odom_guard_translation_m);
+    result->status.map_to_odom_guard_failed_yaw =
+        result->status.map_to_odom_guard_yaw_rad >
+        static_cast<float>(config_.map_to_odom_guard_yaw_rad);
     result->map_to_odom = previous.map_to_odom;
     result->map_to_odom.stamp = frame.stamp;
     result->map_to_base = tf::Compose(result->map_to_odom, result->odom_to_base);
@@ -381,13 +423,23 @@ common::Status LocalizationEngine::Process(const data::SyncedFrame& frame,
   }
 
   result->matcher_name = current_matcher_label_;
+  result->status.source = result->matcher_name;
+  result->status.lost_lock = result->relocalization.phase != RelocalizationPhase::kTracking;
 
   if (result->status.pose_trusted) {
     last_trusted_map_to_base_ = result->map_to_base;
     last_trusted_map_to_odom_ = result->map_to_odom;
     has_trusted_map_to_odom_ = true;
+    last_good_stamp_ = frame.stamp;
+    consecutive_rejections_ = 0;
     relocalization_manager_.SetLastTrustedPose(result->map_to_base);
+  } else {
+    ++consecutive_rejections_;
+    IncrementRejectionCounter(result->status.rejection_reason, &rejection_counters_);
   }
+  result->status.last_good_stamp_ns = common::ToNanoseconds(last_good_stamp_);
+  result->status.consecutive_rejections = consecutive_rejections_;
+  result->status.rejection_counters = rejection_counters_;
   result->processing_latency_ns = common::NowNs() - begin_ns;
 
   const data::LidarFrame aligned_scan = TransformScanToMap(frame.lidar, result->map_to_base);

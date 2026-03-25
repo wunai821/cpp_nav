@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 
+#include "rm_nav/app/command_frame_transform.hpp"
 #include "rm_nav/common/time.hpp"
 #include "rm_nav/debug/foxglove_server.hpp"
 #include "rm_nav/data/tf_types.hpp"
@@ -371,7 +372,9 @@ bool MapArtifactsExist(const std::filesystem::path& directory) {
 
 bool SafetyEventEquals(const data::SafetyEvent& left, const data::SafetyEvent& right) {
   return left.code == right.code && left.severity == right.severity &&
-         left.message == right.message;
+         left.message == right.message && left.trigger_source == right.trigger_source &&
+         left.trigger_threshold == right.trigger_threshold &&
+         left.consecutive_bad_frames == right.consecutive_bad_frames;
 }
 
 bool RefereeStartSignalActive(const data::RefereeState& referee) {
@@ -785,7 +788,124 @@ std::string BuildSafetyEventJson(const data::SafetyEvent& event) {
   output << "  \"code\": \"" << SafetyEventCodeString(event.code) << "\",\n";
   output << "  \"severity\": \"" << SafetySeverityString(event.severity) << "\",\n";
   output << "  \"message\": \"" << event.message << "\",\n";
+  output << "  \"trigger_source\": \"" << event.trigger_source << "\",\n";
+  output << "  \"trigger_threshold\": " << event.trigger_threshold << ",\n";
+  output << "  \"consecutive_bad_frames\": " << event.consecutive_bad_frames << ",\n";
   output << "  \"stamp_ns\": " << common::ToNanoseconds(event.stamp) << "\n";
+  output << "}\n";
+  return output.str();
+}
+
+std::string BuildGuardFailedChecksJson(const localization::LocalizationStatus& status,
+                                       const config::LocalizationConfig& localization_config) {
+  std::vector<std::string> checks;
+  if (!status.converged) {
+    checks.push_back("matcher_not_converged");
+  }
+  if (status.match_score < static_cast<float>(localization_config.min_match_score)) {
+    checks.push_back("score_below_threshold");
+  }
+  if (status.pose_jump_m > static_cast<float>(localization_config.max_position_jump_m)) {
+    checks.push_back("pose_jump_guard");
+  }
+  if (status.yaw_jump_rad > static_cast<float>(localization_config.max_yaw_jump_rad)) {
+    checks.push_back("yaw_jump_guard");
+  }
+  if (status.match_score < 0.0F) {
+    checks.push_back("invalid_score");
+  }
+  if (status.map_to_odom_guard_failed_translation) {
+    checks.push_back("map_to_odom_translation_guard");
+  }
+  if (status.map_to_odom_guard_failed_yaw) {
+    checks.push_back("map_to_odom_yaw_guard");
+  }
+  std::ostringstream output;
+  output << "[";
+  for (std::size_t index = 0; index < checks.size(); ++index) {
+    if (index != 0U) {
+      output << ", ";
+    }
+    output << "\"" << checks[index] << "\"";
+  }
+  output << "]";
+  return output.str();
+}
+
+std::string BuildRejectionCountersJson(
+    const localization::LocalizationRejectionCounters& counters) {
+  std::ostringstream output;
+  output << "{\n";
+  output << "    \"total\": " << counters.total << ",\n";
+  output << "    \"map_unloaded\": " << counters.map_unloaded << ",\n";
+  output << "    \"matcher_not_converged\": " << counters.matcher_not_converged << ",\n";
+  output << "    \"low_match_score\": " << counters.low_match_score << ",\n";
+  output << "    \"pose_jump_guard\": " << counters.pose_jump_guard << ",\n";
+  output << "    \"consecutive_failures\": " << counters.consecutive_failures << ",\n";
+  output << "    \"map_to_odom_guard\": " << counters.map_to_odom_guard << ",\n";
+  output << "    \"relocalization_stabilization_failed\": "
+         << counters.relocalization_stabilization_failed << ",\n";
+  output << "    \"stabilization_window\": " << counters.stabilization_window << ",\n";
+  output << "    \"other\": " << counters.other << "\n";
+  output << "  }";
+  return output.str();
+}
+
+std::string RecoveryEventType(const planning::RecoveryPlannerStatus& previous,
+                              const planning::RecoveryPlannerStatus& current,
+                              const localization::LocalizationResult& localization_result) {
+  if (previous.tier != current.tier &&
+      current.tier != fsm::RecoveryTier::kNone) {
+    return "tier_transition";
+  }
+  if (!previous.requires_relocalization && current.requires_relocalization) {
+    return "relocalization_requested";
+  }
+  if (localization_result.relocalization.attempted &&
+      !localization_result.relocalization.succeeded) {
+    return "relocalization_failed";
+  }
+  return "state_update";
+}
+
+std::string RecoveryEventSummary(const planning::RecoveryPlannerStatus& previous,
+                                 const planning::RecoveryPlannerStatus& current,
+                                 const localization::LocalizationResult& localization_result) {
+  if (previous.tier != current.tier && current.tier != fsm::RecoveryTier::kNone) {
+    return std::string(fsm::ToString(previous.tier)) + " -> " + fsm::ToString(current.tier);
+  }
+  if (!previous.requires_relocalization && current.requires_relocalization) {
+    return "relocalization requested";
+  }
+  if (localization_result.relocalization.attempted &&
+      !localization_result.relocalization.succeeded) {
+    return "relocalization failed";
+  }
+  return current.detail;
+}
+
+std::string BuildRecoveryEventJson(const planning::RecoveryPlannerStatus& previous,
+                                   const planning::RecoveryPlannerStatus& current,
+                                   const localization::LocalizationResult& localization_result,
+                                   common::TimePoint stamp) {
+  std::ostringstream output;
+  output << "{\n";
+  output << "  \"type\": \"" << RecoveryEventType(previous, current, localization_result)
+         << "\",\n";
+  output << "  \"summary\": \""
+         << RecoveryEventSummary(previous, current, localization_result) << "\",\n";
+  output << "  \"from_tier\": \"" << fsm::ToString(previous.tier) << "\",\n";
+  output << "  \"to_tier\": \"" << fsm::ToString(current.tier) << "\",\n";
+  output << "  \"action\": \"" << fsm::ToString(current.action) << "\",\n";
+  output << "  \"strategy\": \"" << current.strategy << "\",\n";
+  output << "  \"detail\": \"" << current.detail << "\",\n";
+  output << "  \"relocalization_phase\": \"" << ToString(localization_result.relocalization.phase)
+         << "\",\n";
+  output << "  \"relocalization_attempted\": "
+         << (localization_result.relocalization.attempted ? "true" : "false") << ",\n";
+  output << "  \"relocalization_succeeded\": "
+         << (localization_result.relocalization.succeeded ? "true" : "false") << ",\n";
+  output << "  \"stamp_ns\": " << common::ToNanoseconds(stamp) << "\n";
   output << "}\n";
   return output.str();
 }
@@ -1068,14 +1188,17 @@ std::vector<data::PointXYZI> CurrentScanScenePoints(const data::LidarFrame& fram
     return points;
   }
 
-  const auto base_to_laser =
-      tf::MakeTransform(tf::kBaseLinkFrame, tf::kLaserFrame, mount.x_m, mount.y_m, mount.z_m,
-                        mount.roll_rad, mount.pitch_rad, mount.yaw_rad, base_pose.stamp);
-  const auto map_to_laser = tf::Compose(base_pose, base_to_laser);
+  data::Pose3f map_to_sensor = base_pose;
+  if (frame.frame_id == tf::kLaserFrame) {
+    const auto base_to_laser =
+        tf::MakeTransform(tf::kBaseLinkFrame, tf::kLaserFrame, mount.x_m, mount.y_m, mount.z_m,
+                          mount.roll_rad, mount.pitch_rad, mount.yaw_rad, base_pose.stamp);
+    map_to_sensor = tf::Compose(base_pose, base_to_laser);
+  }
   const auto sampled = DownsampleScenePoints(frame.points, max_points);
   points.reserve(sampled.size());
   for (const auto& point : sampled) {
-    points.push_back(TransformPointToMap(point, map_to_laser));
+    points.push_back(TransformPointToMap(point, map_to_sensor));
   }
   return points;
 }
@@ -1116,6 +1239,11 @@ void WriteTextFileIfChanged(const std::filesystem::path& path, const std::string
   }
 }
 
+void AppendTextLine(const std::filesystem::path& path, const std::string& text) {
+  std::ofstream output(path, std::ios::out | std::ios::app);
+  output << text << '\n';
+}
+
 std::string BuildHeartbeatJson(common::TimePoint stamp, fsm::NavState state) {
   std::ostringstream output;
   output << "{\n  \"stamp_ns\": " << common::ToNanoseconds(stamp)
@@ -1132,6 +1260,7 @@ void PublishFoxgloveJson(debug::FoxgloveServer* server, std::uint32_t channel_id
 }
 
 void WriteDebugSnapshot(const localization::LocalizationEngine& localization,
+                        const config::LocalizationConfig& localization_config,
                         const planning::PlannerCoordinator& planner,
                         const planning::RecoveryPlannerStatus& recovery_status,
                         const safety::SafetyResult& safety_result,
@@ -1163,7 +1292,17 @@ void WriteDebugSnapshot(const localization::LocalizationEngine& localization,
     output << "  \"failures\": " << result.status.consecutive_failures << ",\n";
     output << "  \"jump_m\": " << result.status.pose_jump_m << ",\n";
     output << "  \"jump_yaw_rad\": " << result.status.yaw_jump_rad << ",\n";
+    output << "  \"guard_failed_checks\": "
+           << BuildGuardFailedChecksJson(result.status, localization_config)
+           << ",\n";
+    output << "  \"score_threshold\": " << localization_config.min_match_score << ",\n";
+    output << "  \"jump_m_threshold\": " << localization_config.max_position_jump_m << ",\n";
+    output << "  \"jump_yaw_threshold\": " << localization_config.max_yaw_jump_rad << ",\n";
+    output << "  \"converged_required\": true,\n";
     output << "  \"rejection_reason\": \"" << result.status.rejection_reason << "\",\n";
+    output << "  \"rejected_because\": \"" << result.status.rejected_because << "\",\n";
+    output << "  \"rejection_counters\": "
+           << BuildRejectionCountersJson(result.status.rejection_counters) << ",\n";
     output << "  \"degraded_mode\": \"" << result.status.degraded_mode << "\",\n";
     output << "  \"relocalization_active\": "
            << (result.relocalization.active ? "true" : "false") << ",\n";
@@ -1196,6 +1335,20 @@ void WriteDebugSnapshot(const localization::LocalizationEngine& localization,
     output << "  \"relocalization_stabilization_elapsed_ns\": "
            << result.relocalization.stabilization_elapsed_ns << ",\n";
     output << "  \"relocalization_score\": " << result.relocalization.best_score << "\n";
+    output << "}\n";
+  }
+  {
+    std::ofstream output(output_dir / "localization_status.json");
+    output << "{\n";
+    output << "  \"trusted\": " << (result.status.pose_trusted ? "true" : "false") << ",\n";
+    output << "  \"quality_score\": " << result.status.match_score << ",\n";
+    output << "  \"lost_lock\": " << (result.status.lost_lock ? "true" : "false") << ",\n";
+    output << "  \"source\": \"" << result.status.source << "\",\n";
+    output << "  \"last_good_stamp_ns\": " << result.status.last_good_stamp_ns << ",\n";
+    output << "  \"consecutive_rejections\": " << result.status.consecutive_rejections
+           << ",\n";
+    output << "  \"rejection_counters\": "
+           << BuildRejectionCountersJson(result.status.rejection_counters) << "\n";
     output << "}\n";
   }
   {
@@ -1294,6 +1447,10 @@ void WriteDebugSnapshot(const localization::LocalizationEngine& localization,
     output << "  \"gate_limited\": " << (safety_result.gate_limited ? "true" : "false")
            << ",\n";
     output << "  \"event_message\": \"" << safety_result.event.message << "\",\n";
+    output << "  \"trigger_source\": \"" << safety_result.event.trigger_source << "\",\n";
+    output << "  \"trigger_threshold\": " << safety_result.event.trigger_threshold << ",\n";
+    output << "  \"consecutive_bad_frames\": " << safety_result.event.consecutive_bad_frames
+           << ",\n";
     output << "  \"communication_ok\": " << (safety_result.communication_ok ? "true" : "false")
            << ",\n";
     output << "  \"chassis_feedback_ok\": "
@@ -1431,6 +1588,12 @@ void WriteFsmDebugSnapshot(const std::string& fsm_status_json,
 void WriteSafetyEventDebugSnapshot(const data::SafetyEvent& event,
                                    const std::filesystem::path& output_dir) {
   WriteTextFile(output_dir / "safety_event.json", BuildSafetyEventJson(event));
+}
+
+void WriteRecoveryEventDebugSnapshot(const std::string& event_json,
+                                     const std::filesystem::path& output_dir) {
+  WriteTextFile(output_dir / "recovery_event.json", event_json);
+  AppendTextLine(output_dir / "recovery_events.jsonl", event_json);
 }
 
 }  // namespace
@@ -1599,6 +1762,14 @@ common::Status Runtime::ValidateLoadedConfig() const {
     return common::Status::InvalidArgument(
         "frame config does not match phase0 fixed frame ids");
   }
+  if (loaded_config_.comm.stm32_command_frame != "base_link" &&
+      loaded_config_.comm.stm32_command_frame != "laser_link") {
+    return common::Status::InvalidArgument("unsupported stm32.command_frame");
+  }
+  if (loaded_config_.comm.stm32_feedback_yaw_mode != "base_link" &&
+      loaded_config_.comm.stm32_feedback_yaw_mode != "integrate_wz") {
+    return common::Status::InvalidArgument("unsupported stm32.feedback_yaw_mode");
+  }
   return common::Status::Ok();
 }
 
@@ -1620,6 +1791,11 @@ common::Status Runtime::ConfigurePipeline() {
   combat_mode_requested_ = loaded_config_.system.bringup_mode == "none" &&
                            (manual_combat || (automatic_fsm && combat_map_available));
   nav_fsm_ = fsm::NavFsm();
+  common::Status status =
+      stm32_odom_yaw_adapter_.Configure(loaded_config_.comm.stm32_feedback_yaw_mode);
+  if (!status.ok()) {
+    return status;
+  }
   mapping_save_requested_.store(false, std::memory_order_release);
   mapping_loop_save_requested_.store(false, std::memory_order_release);
   map_saved_.store(false, std::memory_order_release);
@@ -1650,7 +1826,7 @@ common::Status Runtime::ConfigurePipeline() {
 
   sync::SyncConfig sync_config;
   sync_config.max_imu_packets_per_frame = data::SyncedFrame::kMaxImuPackets;
-  auto status = sensor_sync_.Configure(sync_config);
+  status = sensor_sync_.Configure(sync_config);
   if (!status.ok()) {
     return status;
   }
@@ -1661,6 +1837,7 @@ common::Status Runtime::ConfigurePipeline() {
   preprocess_config.self_mask_x_max_m = loaded_config_.sensors.lidar_self_mask.x_max_m;
   preprocess_config.self_mask_y_min_m = loaded_config_.sensors.lidar_self_mask.y_min_m;
   preprocess_config.self_mask_y_max_m = loaded_config_.sensors.lidar_self_mask.y_max_m;
+  preprocess_config.lidar_mount = loaded_config_.sensors.lidar_mount;
   preprocess_config.expected_input_points =
       mapping_mode_
           ? static_cast<std::size_t>(std::max(32, loaded_config_.mapping.synthetic_points_per_frame))
@@ -1786,12 +1963,6 @@ common::Status Runtime::ConfigurePipeline() {
   }
 
   if (preprocess_config.self_mask_enabled) {
-    const auto base_to_laser =
-        tf_tree_.Lookup(tf::kBaseLinkFrame, tf::kLaserFrame, common::Now());
-    if (!base_to_laser.has_value()) {
-      return common::Status::InternalError("failed to lookup static base->laser transform");
-    }
-    const auto laser_to_base = tf::Inverse(*base_to_laser);
     const std::array<common::Vec2f, 4> base_polygon = {
         common::Vec2f{loaded_config_.sensors.lidar_self_mask.x_min_m,
                       loaded_config_.sensors.lidar_self_mask.y_min_m},
@@ -1803,8 +1974,7 @@ common::Status Runtime::ConfigurePipeline() {
                       loaded_config_.sensors.lidar_self_mask.y_max_m},
     };
     for (std::size_t index = 0; index < base_polygon.size(); ++index) {
-      preprocess_config.self_mask_polygon[index] =
-          TransformPoint2D(laser_to_base, base_polygon[index]);
+      preprocess_config.self_mask_polygon[index] = base_polygon[index];
     }
     preprocess_config.self_mask_polygon_valid = true;
   }
@@ -1981,19 +2151,23 @@ void Runtime::ThreadMain(ThreadBinding binding, int cpu_id) {
 void Runtime::DriverThreadMain() {
   auto next_lidar_due = common::Now();
   auto next_heartbeat_due = common::Now();
+  auto next_test_cmd_due = common::Now();
   std::uint64_t last_sent_cmd_generation = 0;
   bool offline_logged = false;
+  bool test_cmd_logged = false;
   auto cpu_window_begin = common::Now();
   auto cpu_time_begin_ns = ThreadCpuTimeNs();
 
   while (!stop_requested_.load(std::memory_order_acquire)) {
     bool made_progress = false;
     const auto wait_begin = common::Now();
+    const bool test_cmd_enabled = loaded_config_.comm.stm32_test_cmd_enabled;
     const bool heartbeat_due = stm32_available_.load(std::memory_order_acquire) &&
                                wait_begin >= next_heartbeat_due;
     const bool cmd_due =
         stm32_available_.load(std::memory_order_acquire) &&
-        safety_cmd_.generation() != last_sent_cmd_generation;
+        (test_cmd_enabled ? (wait_begin >= next_test_cmd_due)
+                          : (safety_cmd_.generation() != last_sent_cmd_generation));
     if (!heartbeat_due && !cmd_due) {
       if (loaded_config_.sensors.lidar_enabled &&
           (loaded_config_.sensors.lidar_source == "unitree_sdk" ||
@@ -2041,6 +2215,11 @@ void Runtime::DriverThreadMain() {
       LogOncePerThread("driver", "stm32 bridge offline, command output is disabled",
                        &offline_logged);
     } else {
+      if (test_cmd_enabled) {
+        LogOncePerThread("driver",
+                         "stm32 fixed test command enabled; sending values from comm.yaml",
+                         &test_cmd_logged);
+      }
       if (now >= next_heartbeat_due) {
         const auto heartbeat_status = stm32_bridge_.SendHeartbeat();
         if (!heartbeat_status.ok()) {
@@ -2051,10 +2230,29 @@ void Runtime::DriverThreadMain() {
         next_heartbeat_due = now + std::chrono::milliseconds(200);
       }
 
-      if (const auto cmd_generation = safety_cmd_.generation();
-          cmd_generation != last_sent_cmd_generation) {
+      if (test_cmd_enabled) {
+        if (now >= next_test_cmd_due) {
+          data::ChassisCmd test_cmd;
+          test_cmd.stamp = now;
+          test_cmd.vx_mps = static_cast<float>(loaded_config_.comm.stm32_test_cmd_vx_mps);
+          test_cmd.vy_mps = static_cast<float>(loaded_config_.comm.stm32_test_cmd_vy_mps);
+          test_cmd.wz_radps =
+              static_cast<float>(loaded_config_.comm.stm32_test_cmd_wz_radps);
+          test_cmd.brake = loaded_config_.comm.stm32_test_cmd_brake;
+          const auto send_status =
+              stm32_bridge_.SendChassisCmd(CommandForStm32OutputFrame(test_cmd));
+          if (send_status.ok()) {
+            made_progress = true;
+          } else {
+            utils::LogWarn("driver", send_status.message);
+          }
+          next_test_cmd_due = now + std::chrono::milliseconds(50);
+        }
+      } else if (const auto cmd_generation = safety_cmd_.generation();
+                 cmd_generation != last_sent_cmd_generation) {
         const auto safe_cmd = safety_cmd_.ReadSnapshot();
-        const auto send_status = stm32_bridge_.SendChassisCmd(safe_cmd);
+        const auto send_status =
+            stm32_bridge_.SendChassisCmd(CommandForStm32OutputFrame(safe_cmd));
         if (send_status.ok()) {
           last_sent_cmd_generation = cmd_generation;
           made_progress = true;
@@ -2067,8 +2265,11 @@ void Runtime::DriverThreadMain() {
         stm32_bridge_.SpinOnce();
         made_progress = true;
         if (auto odom = stm32_bridge_.TakeOdomState(); odom.has_value()) {
-          stm32_odom_.Publish(*odom);
-          last_stm32_rx_ns_.store(common::ToNanoseconds(odom->stamp), std::memory_order_release);
+          auto adapted_odom =
+              stm32_odom_yaw_adapter_.Adapt(*odom, Stm32FeedbackYawSeed());
+          stm32_odom_.Publish(adapted_odom);
+          last_stm32_rx_ns_.store(common::ToNanoseconds(adapted_odom.stamp),
+                                  std::memory_order_release);
           made_progress = true;
         }
         if (auto referee = stm32_bridge_.TakeRefereeState(); referee.has_value()) {
@@ -2451,6 +2652,8 @@ void Runtime::SafetyThreadMain() {
     safety_input.localization_pose_trusted =
         snapshot.mapping_active || localization_result.status.pose_trusted;
     safety_input.localization_match_score = localization_result.status.match_score;
+    safety_input.localization_consecutive_bad_frames =
+        localization_result.status.consecutive_rejections;
     safety_input.planner_failed = !snapshot.mapping_active && fsm_context.planner_failed;
     safety_input.goal_reached = !snapshot.mapping_active && planner_status.reached;
     safety_input.mission_timeout_enabled = !snapshot.mapping_active;
@@ -2531,6 +2734,8 @@ void Runtime::DebugThreadMain() {
   std::string last_perf_status_json;
   std::string last_runtime_state_json;
   std::string last_watchdog_json;
+  planning::RecoveryPlannerStatus last_recovery_event_status{};
+  std::uint32_t last_relocalization_failed_attempts = 0U;
   while (!stop_requested_.load(std::memory_order_acquire)) {
     const auto now = common::Now();
     if (now >= next_log) {
@@ -2680,6 +2885,27 @@ void Runtime::DebugThreadMain() {
                                &last_perf_status_json);
         WriteTextFileIfChanged("logs/crash/last_runtime_state.json", perf_json,
                                &last_runtime_state_json);
+        const auto recovery_status = latest_recovery_status_.ReadSnapshot();
+        const bool tier_transition =
+            recovery_status.tier != fsm::RecoveryTier::kNone &&
+            recovery_status.tier != last_recovery_event_status.tier;
+        const bool relocalization_requested =
+            !last_recovery_event_status.requires_relocalization &&
+            recovery_status.requires_relocalization;
+        const bool relocalization_failed =
+            localization_result.relocalization.attempted &&
+            !localization_result.relocalization.succeeded &&
+            localization_result.relocalization.failed_attempts !=
+                last_relocalization_failed_attempts;
+        if (tier_transition || relocalization_requested || relocalization_failed) {
+          WriteRecoveryEventDebugSnapshot(
+              BuildRecoveryEventJson(last_recovery_event_status, recovery_status,
+                                     localization_result, now),
+              debug_output_dir);
+        }
+        last_recovery_event_status = recovery_status;
+        last_relocalization_failed_attempts =
+            localization_result.relocalization.failed_attempts;
         if (loaded_config_.debug.websocket_enabled) {
           PublishFoxgloveJson(&foxglove_server_, kRuntimeFsmStatusChannelId, fsm_status_json,
                               now);
@@ -2798,7 +3024,8 @@ void Runtime::DebugThreadMain() {
               planned_cycles != last_planner_snapshot_cycles ||
               recovery_generation != last_recovery_snapshot_generation ||
               safety_generation != last_safety_snapshot_generation) {
-            WriteDebugSnapshot(localization_, planner_, latest_recovery_status_.ReadSnapshot(),
+            WriteDebugSnapshot(localization_, loaded_config_.localization, planner_,
+                               latest_recovery_status_.ReadSnapshot(),
                                latest_safety_result_.ReadSnapshot(), debug_output_dir);
             localization_snapshot_written = true;
             last_localized_snapshot_frames = localized_frames;
@@ -3294,6 +3521,25 @@ data::Pose3f Runtime::MappingPoseFromOdom(const data::OdomState& odom) const {
   const float map_y = static_cast<float>(loaded_config_.spawn.y_m) +
                       sin_yaw * odom.x_m + cos_yaw * odom.y_m;
   return MakeMapPose(odom.stamp, map_x, map_y, NormalizeAngle(origin_yaw + odom.yaw_rad));
+}
+
+data::ChassisCmd Runtime::CommandForStm32OutputFrame(const data::ChassisCmd& cmd) const {
+  if (loaded_config_.comm.stm32_command_frame == "laser_link") {
+    return RotateCommandIntoChildFrame(cmd, loaded_config_.sensors.lidar_mount.yaw_rad);
+  }
+  return cmd;
+}
+
+float Runtime::Stm32FeedbackYawSeed() const {
+  const auto localization_odom = localization_.LatestOdomToBase();
+  if (localization_odom.is_valid) {
+    return localization_odom.rpy.z;
+  }
+  const auto mapping_pose = mapping_pose_.ReadSnapshot();
+  if (mapping_pose.is_valid) {
+    return mapping_pose.rpy.z;
+  }
+  return static_cast<float>(loaded_config_.spawn.theta_rad);
 }
 
 }  // namespace rm_nav::app

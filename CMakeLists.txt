@@ -68,9 +68,11 @@ endif()
 # Core library
 # =========================
 add_library(rm_nav_core
+  src/app/command_frame_transform.cpp
   src/app/app.cpp
   src/app/bootstrap.cpp
   src/app/match_mode_controller.cpp
+  src/app/odom_feedback_yaw_adapter.cpp
   src/app/runtime.cpp
   src/common/time.cpp
   src/config/config_loader.cpp
@@ -246,6 +248,8 @@ rm_nav_add_unit_test(test_localization_recovery tests/unit/test_localization_rec
 rm_nav_add_unit_test(test_relocalization_manager tests/unit/test_relocalization_manager.cpp)
 rm_nav_add_unit_test(test_center_hold tests/unit/test_center_hold.cpp)
 rm_nav_add_unit_test(test_collision_checker tests/unit/test_collision_checker.cpp)
+rm_nav_add_unit_test(test_command_frame_transform tests/unit/test_command_frame_transform.cpp)
+rm_nav_add_unit_test(test_odom_feedback_yaw_adapter tests/unit/test_odom_feedback_yaw_adapter.cpp)
 rm_nav_add_unit_test(test_command_gate tests/unit/test_command_gate.cpp)
 rm_nav_add_unit_test(test_mission_manager tests/unit/test_mission_manager.cpp)
 rm_nav_add_unit_test(test_match_mode_controller tests/unit/test_match_mode_controller.cpp)
@@ -303,6 +307,7 @@ set_tests_properties(
   test_relocalization_manager
   test_center_hold
   test_collision_checker
+  test_command_frame_transform
   test_command_gate
   test_mission_manager
   test_preprocess_pipeline

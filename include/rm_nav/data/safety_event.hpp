@@ -1,6 +1,6 @@
 #pragma once
 
-#include <string_view>
+#include <string>
 
 #include "rm_nav/common/time.hpp"
 
@@ -29,7 +29,10 @@ struct SafetyEvent {
   common::TimePoint stamp{};
   SafetyEventCode code{SafetyEventCode::kNone};
   SafetySeverity severity{SafetySeverity::kInfo};
-  std::string_view message{};
+  std::string message{};
+  std::string trigger_source{"none"};
+  double trigger_threshold{0.0};
+  std::uint32_t consecutive_bad_frames{0};
 };
 
 }  // namespace rm_nav::data

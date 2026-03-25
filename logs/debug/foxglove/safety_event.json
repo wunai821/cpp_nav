@@ -2,5 +2,8 @@
   "code": "FAILSAFE_OVERRIDE",
   "severity": "CRITICAL",
   "message": "hold timeout escalated to failsafe",
-  "stamp_ns": 12364788760238
+  "trigger_source": "mission_timeout",
+  "trigger_threshold": 15000,
+  "consecutive_bad_frames": 0,
+  "stamp_ns": 10374138948508
 }

@@ -4,3 +4,13 @@ odom: odom  # 局部里程计坐标系，用于短时连续运动估计。
 base_link: base_link  # 机器人底盘主体坐标系，作为控制和运动学基准。
 laser_link: laser_link  # 激光雷达安装坐标系，用于点云外参与扫描数据表达。
 imu_link: imu_link  # IMU 安装坐标系，用于角速度和加速度测量表达。
+
+# base_link 基准定义记录区：
+# 这部分目前只作为机械/标定记录，不参与 runtime 解析。
+base_link_reference:
+  origin_definition: ""  # 文字说明：例如“四轮几何中心”/“底盘安装板中心”。
+  z0_definition: ""  # 文字说明：例如“轮轴中心平面”/“底盘上表面”。
+  chassis_length_m: 0.00  # 底盘前后总长，单位米，便于确认几何中心。
+  chassis_width_m: 0.00  # 底盘左右总宽，单位米，便于确认几何中心。
+  ground_to_base_z0_m: 0.00  # 地面到 base_link z=0 参考面的高度，单位米。
+  notes: ""  # 备注：例如“前装甲板比几何中心前伸 4cm，不计入 base_link 原点”。

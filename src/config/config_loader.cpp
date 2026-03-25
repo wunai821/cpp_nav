@@ -329,6 +329,26 @@ common::Status ConfigLoader::LoadFromDirectory(
         GetString(merged_values, "stm32.port", result.comm.stm32_port);
     result.comm.stm32_baud_rate =
         GetInt(merged_values, "stm32.baud_rate", result.comm.stm32_baud_rate);
+    result.comm.stm32_command_frame =
+        GetString(merged_values, "stm32.command_frame", result.comm.stm32_command_frame);
+    result.comm.stm32_feedback_yaw_mode =
+        GetString(merged_values, "stm32.feedback_yaw_mode",
+                  result.comm.stm32_feedback_yaw_mode);
+    result.comm.stm32_test_cmd_enabled =
+        GetBool(merged_values, "stm32.test_cmd.enabled",
+                result.comm.stm32_test_cmd_enabled);
+    result.comm.stm32_test_cmd_vx_mps =
+        GetDouble(merged_values, "stm32.test_cmd.vx_mps",
+                  result.comm.stm32_test_cmd_vx_mps);
+    result.comm.stm32_test_cmd_vy_mps =
+        GetDouble(merged_values, "stm32.test_cmd.vy_mps",
+                  result.comm.stm32_test_cmd_vy_mps);
+    result.comm.stm32_test_cmd_wz_radps =
+        GetDouble(merged_values, "stm32.test_cmd.wz_radps",
+                  result.comm.stm32_test_cmd_wz_radps);
+    result.comm.stm32_test_cmd_brake =
+        GetBool(merged_values, "stm32.test_cmd.brake",
+                result.comm.stm32_test_cmd_brake);
 
     result.debug.websocket_enabled =
         GetBool(merged_values, "websocket.enabled", result.debug.websocket_enabled);
@@ -979,7 +999,15 @@ std::string ConfigLoader::BuildSummary(const LoadedConfig& loaded_config) const 
           << loaded_config.sensors.imu_mount.pitch_rad << ','
           << loaded_config.sensors.imu_mount.yaw_rad << "]"
           << ", comm=[stm32:" << loaded_config.comm.stm32_port << ':'
-          << loaded_config.comm.stm32_baud_rate << "]"
+          << loaded_config.comm.stm32_baud_rate
+          << ", frame:" << loaded_config.comm.stm32_command_frame
+          << ", yaw:" << loaded_config.comm.stm32_feedback_yaw_mode
+          << ", test_cmd:"
+          << (loaded_config.comm.stm32_test_cmd_enabled ? "on" : "off") << ':'
+          << loaded_config.comm.stm32_test_cmd_vx_mps << ','
+          << loaded_config.comm.stm32_test_cmd_vy_mps << ','
+          << loaded_config.comm.stm32_test_cmd_wz_radps << ','
+          << (loaded_config.comm.stm32_test_cmd_brake ? "brake" : "free") << "]"
           << ", debug=[ws:" << (loaded_config.debug.websocket_enabled ? "on" : "off")
           << ':' << loaded_config.debug.websocket_host << ':'
           << loaded_config.debug.websocket_port

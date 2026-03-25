@@ -53,7 +53,7 @@ bool RangeCropFilter::PointInSelfMask(float x, float y) const {
          y <= self_mask_y_max_m_;
 }
 
-common::Status RangeCropFilter::Apply(const data::LidarFrame& input,
+common::Status RangeCropFilter::Apply(const std::vector<data::PointXYZI>& input,
                                       std::vector<data::PointXYZI>* output) const {
   if (output == nullptr) {
     return common::Status::InvalidArgument("range crop output is null");
@@ -63,8 +63,8 @@ common::Status RangeCropFilter::Apply(const data::LidarFrame& input,
   }
 
   output->clear();
-  output->reserve(input.points.size());
-  for (const auto& point : input.points) {
+  output->reserve(input.size());
+  for (const auto& point : input) {
     const float range_m = std::sqrt(point.x * point.x + point.y * point.y);
     if (range_m < min_range_m_ || range_m > max_range_m_ || range_m < blind_zone_radius_m_) {
       continue;

@@ -10,6 +10,7 @@
 
 #include "rm_nav/app/bootstrap.hpp"
 #include "rm_nav/app/match_mode_controller.hpp"
+#include "rm_nav/app/odom_feedback_yaw_adapter.hpp"
 #include "rm_nav/common/double_buffer.hpp"
 #include "rm_nav/common/status.hpp"
 #include "rm_nav/config/config_loader.hpp"
@@ -102,6 +103,8 @@ class Runtime {
   int ResolveCpu(ThreadDomain domain) const;
   void LogStartupSummary() const;
   data::Pose3f MappingPoseFromOdom(const data::OdomState& odom) const;
+  data::ChassisCmd CommandForStm32OutputFrame(const data::ChassisCmd& cmd) const;
+  float Stm32FeedbackYawSeed() const;
 
   config::LoadedConfig loaded_config_{};
   RuntimeManifest manifest_{};
@@ -127,6 +130,7 @@ class Runtime {
   safety::SafetyManager safety_manager_{};
   debug::FoxgloveServer foxglove_server_{};
   MatchModeController match_mode_controller_{};
+  OdomFeedbackYawAdapter stm32_odom_yaw_adapter_{};
   common::SpscRingQueue<sync::SyncedFrameHandle, 16> mapping_queue_{};
 
   fsm::NavFsm nav_fsm_{};

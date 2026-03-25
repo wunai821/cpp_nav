@@ -37,6 +37,7 @@ struct SafetyInput {
   bool localization_degraded{false};
   bool localization_pose_trusted{false};
   float localization_match_score{0.0F};
+  std::uint32_t localization_consecutive_bad_frames{0};
   bool planner_failed{false};
   bool goal_reached{false};
   bool mission_timeout_enabled{true};

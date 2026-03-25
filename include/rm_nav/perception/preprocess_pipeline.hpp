@@ -10,6 +10,7 @@
 #include "rm_nav/common/object_pool.hpp"
 #include "rm_nav/common/ring_queue.hpp"
 #include "rm_nav/common/status.hpp"
+#include "rm_nav/config/sensor_config.hpp"
 #include "rm_nav/data/lidar_frame.hpp"
 #include "rm_nav/data/synced_frame.hpp"
 #include "rm_nav/perception/ground_filter.hpp"
@@ -33,6 +34,7 @@ struct PreprocessConfig {
   float self_mask_x_max_m{0.3F};
   float self_mask_y_min_m{-0.25F};
   float self_mask_y_max_m{0.25F};
+  config::ExtrinsicConfig lidar_mount{};
   std::array<common::Vec2f, 4> self_mask_polygon{};
   bool self_mask_polygon_valid{false};
   std::size_t max_filtered_frames{8};
@@ -67,6 +69,7 @@ class PreprocessPipeline {
   std::atomic<std::uint32_t> pending_inputs_{0};
   std::vector<data::PointXYZI> cropped_points_{};
   std::vector<data::PointXYZI> nonground_points_{};
+  std::vector<data::PointXYZI> transformed_points_{};
   std::size_t expected_filtered_points_{0};
   std::uint64_t dropped_frames_{0};
   bool configured_{false};

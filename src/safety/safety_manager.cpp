@@ -23,6 +23,67 @@ data::ChassisCmd BrakeCommand(common::TimePoint stamp) {
   return cmd;
 }
 
+void PopulateSafetyEventDetails(const SafetyInput& input, const SafetyResult& result,
+                                const config::SafetyConfig& config, data::SafetyEvent* event) {
+  if (event == nullptr) {
+    return;
+  }
+  event->trigger_source = "none";
+  event->trigger_threshold = 0.0;
+  event->consecutive_bad_frames = 0U;
+  switch (event->code) {
+    case data::SafetyEventCode::kPoseLost:
+      event->trigger_source = result.state == SafetyState::kFailsafe ? "localization_failsafe"
+                                                                     : "localization_quality";
+      event->trigger_threshold = result.state == SafetyState::kFailsafe
+                                     ? static_cast<double>(config.localization_fail_timeout_ms)
+                                     : static_cast<double>(input.localization_match_score);
+      event->consecutive_bad_frames = input.localization_consecutive_bad_frames;
+      break;
+    case data::SafetyEventCode::kDeadmanTimeout:
+      event->trigger_source = "planner_deadman";
+      event->trigger_threshold = static_cast<double>(config.deadman_timeout_ms);
+      break;
+    case data::SafetyEventCode::kPlannerStall:
+      event->trigger_source = "planner_path";
+      event->trigger_threshold = static_cast<double>(config.planner_fail_timeout_ms);
+      break;
+    case data::SafetyEventCode::kEmergencyStop:
+      event->trigger_source = "obstacle_distance";
+      event->trigger_threshold = config.emergency_stop_distance_m;
+      break;
+    case data::SafetyEventCode::kSensorTimeout:
+      event->trigger_source = result.communication_ok ? "costmap_or_chassis" : "communication";
+      event->trigger_threshold = result.communication_ok
+                                     ? static_cast<double>(config.costmap_timeout_ms)
+                                     : static_cast<double>(config.heartbeat_timeout_ms);
+      break;
+    case data::SafetyEventCode::kFailsafeOverride:
+      if (input.force_failsafe) {
+        event->trigger_source = "force_failsafe";
+      } else if (!result.planner_status_ok) {
+        event->trigger_source = "planner_timeout";
+        event->trigger_threshold = static_cast<double>(config.planner_fail_timeout_ms);
+      } else {
+        event->trigger_source = "mission_timeout";
+        event->trigger_threshold = static_cast<double>(config.mission_timeout_ms);
+      }
+      break;
+    case data::SafetyEventCode::kStaticCollision:
+      event->trigger_source = "static_collision";
+      break;
+    case data::SafetyEventCode::kDynamicCollision:
+      event->trigger_source = "dynamic_collision";
+      break;
+    case data::SafetyEventCode::kObstacleTooClose:
+      event->trigger_source = "obstacle_near";
+      event->trigger_threshold = config.emergency_stop_distance_m;
+      break;
+    case data::SafetyEventCode::kNone:
+      break;
+  }
+}
+
 CommandGateReason FailsafeReason(const SafetyResult& result) {
   if (!result.communication_ok) {
     return CommandGateReason::kCommunicationLost;
@@ -104,6 +165,12 @@ common::Status SafetyManager::Evaluate(const SafetyInput& input, SafetyResult* r
   if (!configured_) {
     return common::Status::NotReady("safety manager is not configured");
   }
+
+  const auto finalize_event = [&]() {
+    if (result->has_event) {
+      PopulateSafetyEventDetails(input, *result, config_, &result->event);
+    }
+  };
 
   *result = {};
   result->costmap_valid = CostmapValid(input.costmap);
@@ -197,6 +264,7 @@ common::Status SafetyManager::Evaluate(const SafetyInput& input, SafetyResult* r
     result->gate_reason =
         input.force_failsafe ? CommandGateReason::kFailsafeOverride : FailsafeReason(*result);
     command_gate_.Reset();
+    finalize_event();
     return common::Status::Ok();
   }
 
@@ -205,6 +273,7 @@ common::Status SafetyManager::Evaluate(const SafetyInput& input, SafetyResult* r
     result->gated_cmd = result->freeze_cmd;
     result->gate_reason = CommandGateReason::kModeTransition;
     command_gate_.Reset();
+    finalize_event();
     return common::Status::Ok();
   }
   if (!result->communication_ok) {
@@ -212,6 +281,7 @@ common::Status SafetyManager::Evaluate(const SafetyInput& input, SafetyResult* r
     result->gated_cmd = result->failsafe_cmd;
     result->gate_reason = CommandGateReason::kCommunicationLost;
     command_gate_.Reset();
+    finalize_event();
     return common::Status::Ok();
   }
   if (!result->chassis_feedback_ok) {
@@ -219,6 +289,7 @@ common::Status SafetyManager::Evaluate(const SafetyInput& input, SafetyResult* r
     result->gated_cmd = result->freeze_cmd;
     result->gate_reason = CommandGateReason::kChassisFeedbackLost;
     command_gate_.Reset();
+    finalize_event();
     return common::Status::Ok();
   }
   if (input.costmap_required && !result->costmap_valid) {
@@ -226,6 +297,7 @@ common::Status SafetyManager::Evaluate(const SafetyInput& input, SafetyResult* r
     result->gated_cmd = result->freeze_cmd;
     result->gate_reason = CommandGateReason::kCostmapInvalid;
     command_gate_.Reset();
+    finalize_event();
     return common::Status::Ok();
   }
   if (input.costmap_required && !result->costmap_fresh) {
@@ -233,6 +305,7 @@ common::Status SafetyManager::Evaluate(const SafetyInput& input, SafetyResult* r
     result->gated_cmd = result->freeze_cmd;
     result->gate_reason = CommandGateReason::kCostmapStale;
     command_gate_.Reset();
+    finalize_event();
     return common::Status::Ok();
   }
   if (result->planner_cmd_timed_out) {
@@ -240,6 +313,7 @@ common::Status SafetyManager::Evaluate(const SafetyInput& input, SafetyResult* r
     result->gated_cmd = result->freeze_cmd;
     result->gate_reason = CommandGateReason::kPlannerTimeout;
     command_gate_.Reset();
+    finalize_event();
     return common::Status::Ok();
   }
   if (!result->localization_quality_ok) {
@@ -247,6 +321,7 @@ common::Status SafetyManager::Evaluate(const SafetyInput& input, SafetyResult* r
     result->gated_cmd = result->freeze_cmd;
     result->gate_reason = CommandGateReason::kLocalizationDegraded;
     command_gate_.Reset();
+    finalize_event();
     return common::Status::Ok();
   }
   if (!result->planner_status_ok) {
@@ -254,6 +329,7 @@ common::Status SafetyManager::Evaluate(const SafetyInput& input, SafetyResult* r
     result->gated_cmd = result->freeze_cmd;
     result->gate_reason = CommandGateReason::kPlannerFailed;
     command_gate_.Reset();
+    finalize_event();
     return common::Status::Ok();
   }
   if (result->collision_type == CollisionType::kStatic) {
@@ -261,6 +337,7 @@ common::Status SafetyManager::Evaluate(const SafetyInput& input, SafetyResult* r
     result->gated_cmd = result->freeze_cmd;
     result->gate_reason = CommandGateReason::kStaticCollision;
     command_gate_.Reset();
+    finalize_event();
     return common::Status::Ok();
   }
   if (result->collision_type == CollisionType::kDynamic) {
@@ -268,6 +345,7 @@ common::Status SafetyManager::Evaluate(const SafetyInput& input, SafetyResult* r
     result->gated_cmd = result->freeze_cmd;
     result->gate_reason = CommandGateReason::kDynamicCollision;
     command_gate_.Reset();
+    finalize_event();
     return common::Status::Ok();
   }
   if (!decision.motion_allowed || proposed_cmd.brake || !HasMotionRequest(proposed_cmd)) {
@@ -276,6 +354,7 @@ common::Status SafetyManager::Evaluate(const SafetyInput& input, SafetyResult* r
     result->gate_reason = proposed_cmd.brake ? CommandGateReason::kBrakeRequested
                                              : CommandGateReason::kStateBlocked;
     command_gate_.Reset();
+    finalize_event();
     return common::Status::Ok();
   }
 
@@ -289,6 +368,7 @@ common::Status SafetyManager::Evaluate(const SafetyInput& input, SafetyResult* r
     if (result->gate_reason == CommandGateReason::kNone) {
       result->gate_reason = CommandGateReason::kStateBlocked;
     }
+    finalize_event();
     return common::Status::Ok();
   }
   result->authority = gate_result.limited ? SafetyCommandAuthority::kLimited
@@ -297,6 +377,7 @@ common::Status SafetyManager::Evaluate(const SafetyInput& input, SafetyResult* r
   if (!gate_result.limited) {
     result->limited_cmd = gate_result.command;
   }
+  finalize_event();
   return common::Status::Ok();
 }
 

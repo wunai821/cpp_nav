@@ -14,8 +14,8 @@ safety:  # 安全控制配置，用于限速、急停和状态机约束。
   mission_timeout_ms: 30000  # 比赛导航持续超时仍未到点则进入 FAILSAFE，单位毫秒。
   footprint_half_length_m: 0.30  # Safety 车体 footprint 的前后半长，单位米，中心点外加四角采样都基于它。
   footprint_half_width_m: 0.25  # Safety 车体 footprint 的左右半宽，单位米，中心点外加四角采样都基于它。
-  max_vx_mps: 1.0  # Safety 最终允许下发的前向速度上限，单位米每秒。
-  max_vy_mps: 0.8  # Safety 最终允许下发的侧向速度上限，单位米每秒。
+  max_vx_mps: 1.5  # Safety 最终允许下发的前向速度上限，单位米每秒。
+  max_vy_mps: 1.5  # Safety 最终允许下发的侧向速度上限，单位米每秒。
   max_wz_radps: 1.0  # Safety 最终允许下发的角速度上限，单位弧度每秒。
   max_delta_v_per_tick: 0.08  # Safety 每个 tick 允许的线速度变化量上限，单位米每秒。
   max_delta_w_per_tick: 0.12  # Safety 每个 tick 允许的角速度变化量上限，单位弧度每秒。

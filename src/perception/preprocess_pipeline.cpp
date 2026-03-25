@@ -1,6 +1,31 @@
 #include "rm_nav/perception/preprocess_pipeline.hpp"
 
+#include <cmath>
+
+#include "rm_nav/tf/frame_ids.hpp"
+
 namespace rm_nav::perception {
+namespace {
+
+data::PointXYZI TransformPointToBase(const data::PointXYZI& point,
+                                     const config::ExtrinsicConfig& mount) {
+  const float cr = std::cos(mount.roll_rad);
+  const float sr = std::sin(mount.roll_rad);
+  const float cp = std::cos(mount.pitch_rad);
+  const float sp = std::sin(mount.pitch_rad);
+  const float cy = std::cos(mount.yaw_rad);
+  const float sy = std::sin(mount.yaw_rad);
+
+  data::PointXYZI transformed = point;
+  transformed.x = mount.x_m + (cy * cp) * point.x + (cy * sp * sr - sy * cr) * point.y +
+                  (cy * sp * cr + sy * sr) * point.z;
+  transformed.y = mount.y_m + (sy * cp) * point.x + (sy * sp * sr + cy * cr) * point.y +
+                  (sy * sp * cr - cy * sr) * point.z;
+  transformed.z = mount.z_m + (-sp) * point.x + (cp * sr) * point.y + (cp * cr) * point.z;
+  return transformed;
+}
+
+}  // namespace
 
 common::Status PreprocessPipeline::Configure(const PreprocessConfig& config) {
   if (config.min_range_m < 0.0F || config.max_range_m <= config.min_range_m ||
@@ -34,8 +59,10 @@ common::Status PreprocessPipeline::Configure(const PreprocessConfig& config) {
   }
   cropped_points_.clear();
   nonground_points_.clear();
+  transformed_points_.clear();
   cropped_points_.reserve(expected_filtered_points_);
   nonground_points_.reserve(expected_filtered_points_);
+  transformed_points_.reserve(expected_filtered_points_);
   configured_ = true;
   return common::Status::Ok();
 }
@@ -108,11 +135,22 @@ common::Status PreprocessPipeline::Run(const data::SyncedFrame& input,
   }
 
   *filtered = input.lidar;
+  filtered->frame_id = tf::kBaseLinkFrame;
   filtered->points.clear();
   filtered->points.MutableView().reserve(expected_filtered_points_);
+  transformed_points_.clear();
   cropped_points_.clear();
   nonground_points_.clear();
-  auto status = range_crop_filter_.Apply(input.lidar, &cropped_points_);
+  transformed_points_.reserve(std::max(expected_filtered_points_, input.lidar.points.size()));
+  if (input.lidar.frame_id == tf::kBaseLinkFrame) {
+    transformed_points_.insert(transformed_points_.end(), input.lidar.points.begin(),
+                               input.lidar.points.end());
+  } else {
+    for (const auto& point : input.lidar.points) {
+      transformed_points_.push_back(TransformPointToBase(point, config_.lidar_mount));
+    }
+  }
+  auto status = range_crop_filter_.Apply(transformed_points_, &cropped_points_);
   if (!status.ok()) {
     return status;
   }

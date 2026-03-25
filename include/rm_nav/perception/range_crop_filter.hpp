@@ -14,7 +14,7 @@ struct PreprocessConfig;
 class RangeCropFilter {
  public:
   common::Status Configure(const PreprocessConfig& config);
-  common::Status Apply(const data::LidarFrame& input,
+  common::Status Apply(const std::vector<data::PointXYZI>& input,
                        std::vector<data::PointXYZI>* output) const;
 
  private:

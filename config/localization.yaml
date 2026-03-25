@@ -1,4 +1,6 @@
 # 定位配置：定义静态地图输入、匹配器选择以及定位质量判定阈值。
+# 当前场地尺寸记录为 12m x 8m。
+# 注意：定位主链不会直接从本文件读取“地图宽高”，实际尺寸以加载的 occupancy / global_map / map_meta 为准。
 localization:  # 定位主配置，用于地图加载、scan matcher 和 map->odom 修正。
   enabled: false  # 兼容保留字段；runtime 主链是否进入定位/正赛模式现在统一由 system.manual_mode_selector 和 FSM 决定，不再需要手工改这里。
   occupancy_path: ../maps/combat/active/occupancy.bin  # 占据栅格地图文件路径；保留给直接 MapLoader/离线工具使用，runtime 正赛主链现在只认 mapping.active_dir。

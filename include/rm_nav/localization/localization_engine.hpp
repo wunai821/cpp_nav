@@ -100,6 +100,9 @@ class LocalizationEngine {
   data::Pose3f last_trusted_map_to_base_{};
   data::Pose3f last_trusted_map_to_odom_{};
   bool has_trusted_map_to_odom_{false};
+  common::TimePoint last_good_stamp_{};
+  std::uint32_t consecutive_rejections_{0};
+  LocalizationRejectionCounters rejection_counters_{};
   std::string current_matcher_label_{"none"};
   std::string last_logged_matcher_label_{"none"};
   RelocalizationPhase last_logged_relocalization_phase_{RelocalizationPhase::kTracking};

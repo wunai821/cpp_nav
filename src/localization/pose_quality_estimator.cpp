@@ -66,6 +66,7 @@ LocalizationStatus PoseQualityEstimator::Evaluate(const data::Pose3f& previous_p
     status.rejection_reason = "none";
     status.degraded_mode = "none";
   }
+  status.rejected_because = status.rejection_reason;
   return status;
 }
 

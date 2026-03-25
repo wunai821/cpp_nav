@@ -3,3 +3,11 @@ stm32:  # STM32 通信配置，用于底盘命令发送和底盘反馈接收。
   enabled: true  # 是否启用 STM32 通信桥。
   port: /dev/ttyUSB0  # STM32 所连接的串口设备路径。
   baud_rate: 115200  # 串口波特率，需与下位机固件配置保持一致。
+  command_frame: base_link  # 串口发送速度所使用的坐标系。base_link=车体系；laser_link=按雷达/云台系发送，当前使用 lidar.mount.yaw_rad 作为相对 yaw。
+  feedback_yaw_mode: base_link  # STM32 回传 yaw 的解释方式。base_link=直接把 odom.yaw_rad 当底盘朝向；integrate_wz=忽略回传 yaw，改用回传 wz 在上位机积分底盘 yaw，适合下位机回的是云台 yaw。
+  test_cmd:  # 串口固定测试命令；开启后会绕过正常 planner/safety 输出，按这里的值周期下发，专门用于联调“车会不会跑”。这里的 vx/vy/wz 会先按上位机语义生成，再根据 command_frame 在发送前做一次坐标变换。
+    enabled: true  # 是否启用固定测试命令。联调结束后务必改回 false。
+    vx_mps: 1.0  # 固定测试前向速度，单位 m/s。
+    vy_mps: 1.0  # 固定测试侧向速度，单位 m/s。
+    wz_radps: 0.0  # 固定测试角速度，单位 rad/s。
+    brake: false  # 是否同时下发刹车标志；true 时底盘应保持停车。
