@@ -12,7 +12,7 @@ lidar:  # 激光雷达配置，用于驱动初始化和录制回放选择。
     z_m: 0.00  # 雷达中心在 base_link 下的高度偏移，向上为正，单位米。
     roll_rad: 0.00  # 雷达绕 x 轴的安装滚转角，右手系为正，单位弧度。
     pitch_rad: 0.00  # 雷达绕 y 轴的安装俯仰角，右手系为正，单位弧度。
-    yaw_rad: 0.00  # 雷达朝向相对 base_link 的偏航角，逆时针为正，单位弧度。
+    yaw_rad: 1.57  # 雷达朝向相对 base_link 的偏航角，逆时针为正，单位弧度。当前按“雷达 x 对应车体 y、雷达 y 对应车体 -x”设置为 +90 度。
   self_mask:  # 车体自遮挡剔除配置，使用 base_link 坐标系下的矩形 footprint，运行时自动转换到 laser_link。
     enabled: true  # 是否启用激光点云的车体 mask，避免把自车边缘视为障碍物。
     x_min_m: -0.30  # 矩形 footprint 在 base_link 下的最小前后边界，单位米。
@@ -29,5 +29,5 @@ imu:  # IMU 配置，用于姿态预积分、deskew 和同步链路。
     z_m: 0.00  # IMU 中心在 base_link 下的高度偏移，先与 lidar.mount 对齐，向上为正，单位米。
     roll_rad: 0.00  # IMU 绕 x 轴的安装滚转角，先与 lidar.mount 对齐，右手系为正，单位弧度。
     pitch_rad: 0.00  # IMU 绕 y 轴的安装俯仰角，先与 lidar.mount 对齐，右手系为正，单位弧度。
-    yaw_rad: 0.00  # IMU 朝向相对 base_link 的偏航角，先与 lidar.mount 对齐，逆时针为正，单位弧度。
+    yaw_rad: 1.57  # IMU 朝向相对 base_link 的偏航角，先与 lidar.mount 对齐，逆时针为正，单位弧度。当前按雷达内置 IMU 与雷达同姿处理。
   
